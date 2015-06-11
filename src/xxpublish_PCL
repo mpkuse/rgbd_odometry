@@ -1,0 +1,89 @@
+
+/// @brief Publishes the point cloud of current RGBD.
+/// Uses the current RGBD, camera matrix and creates a point cloud. Note that the coords are in frame of the camera (ie. camera center is the origin)
+void SolveDVO::publishCurrentPointCloud()
+{
+    assert( isFrameAvailable );
+    assert( cameraIntrinsicsReady );
+
+
+    sensor_msgs::PointCloud pcl_msg;
+    pcl_msg.header.frame_id = "denseVO";
+    pcl_msg.header.stamp = ros::Time::now();
+    pcl_msg.header.seq = 0;
+
+    sensor_msgs::ChannelFloat32 shadeR, shadeG, shadeB, shade_gray;
+    shadeR.name = "r";
+    shadeG.name = "g";
+    shadeB.name = "b";
+    shade_gray.name = "intensity";
+    shadeR.values.reserve(rcvd_depth.rows()*rcvd_depth.cols());
+    shadeG.values.reserve(rcvd_depth.rows()*rcvd_depth.cols());
+    shadeB.values.reserve(rcvd_depth.rows()*rcvd_depth.cols());
+    shade_gray.values.reserve(rcvd_depth.rows()*rcvd_depth.cols());
+
+
+    //loop through each pixel
+    float fx_inv = (float)1/fx;
+    float fy_inv = (float)1/fy;
+    for( int imx=0 ; imx<rcvd_depth.cols() ; imx++ )
+    {
+        for( int imy=0 ; imy<rcvd_depth.rows() ; imy++ )
+        {
+
+            /// [X Y Z]'  = depth * K_inv * [ imx imy 1.0 ]'
+            float Z = (float)rcvd_dframe.at<uint16_t>(imy,imx);
+            float X = (float)Z*(imx - cx)*fx_inv;
+            float Y = (float)Z*(imy - cy)*fy_inv;
+
+            geometry_msgs::Point32 pt;
+            pt.x = X;
+            pt.y = Y;
+            pt.z = Z;
+
+
+
+//            shadeR.values.push_back( (float)rcvd_red(imy,imx)/255. );
+//            shadeG.values.push_back( (float)rcvd_green(imy,imx)/255. );
+//            shadeB.values.push_back( (float)rcvd_blue(imy,imx)/255. );
+            shade_gray.values.push_back( (float)rcvd_gray(imy,imx) );
+
+            pcl_msg.points.push_back(pt);
+
+
+        }
+    }
+//    pcl_msg.channels.push_back(shadeR);
+//    pcl_msg.channels.push_back(shadeG);
+//    pcl_msg.channels.push_back(shadeB);
+    pcl_msg.channels.push_back(shade_gray);
+
+    pub_pc.publish( pcl_msg );
+
+
+}
+
+void SolveDVO::publishBowl()
+{
+    sensor_msgs::PointCloud pcl_msg;
+    pcl_msg.header.frame_id = "denseVO";
+    pcl_msg.header.stamp = ros::Time::now();
+
+
+    for( float x=-10 ;  x<10 ; x+=0.1 )
+    {
+        for( float y=-10 ; y<10 ; y+=0.1 )
+        {
+            float z = x*x + y*y;
+            geometry_msgs::Point32 pt;
+            pt.x = x/1000.;
+            pt.y = y/1000.;
+            pt.z = z/1000.;
+
+            pcl_msg.points.push_back(pt);
+
+        }
+    }
+    pub_pc.publish( pcl_msg );
+}
+

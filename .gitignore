@@ -1,0 +1,7 @@
+CMakeLists.txt.user
+Doxyfile
+docs/
+*.log
+*.bak
+*.[oa]
+*~

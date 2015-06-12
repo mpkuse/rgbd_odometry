@@ -460,6 +460,8 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         if( level == __REPROJECTION_LEVEL )
         {
+            visualizeHistogram( __residues );
+
         cv::Mat outImg2;
         sOverlay(im_n[__REPROJECTION_LEVEL], __now_roi_reproj, outImg2, cv::Vec3b(255,255,0) );
         cv::imshow( "DEBUG reprojected markers onto now", outImg2 );
@@ -574,8 +576,15 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
     Eigen::MatrixXf pts3d_n = cR.transpose() * ( pts3d_ref - cTRep );
 
 
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
     if( level == __REPROJECTION_LEVEL )
+    {
         __now_roi_reproj = Eigen::MatrixXi::Zero(_now.rows(), _now.cols());
+        __residues = -Eigen::VectorXf::Ones( pts3d_ref.cols() );
+
+    }
+#endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
+
 
 
     float cumm_r=0.0;
@@ -616,8 +625,13 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
             A += (jacob[i].transpose() * jacob[i])*weight;
 
 
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
             if( level == __REPROJECTION_LEVEL )
+            {
                 __now_roi_reproj(yy,xx) = 1;
+                __residues(i) = (r>0)?r:-r;
+            }
+#endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
 
             b += r*jacob[i].transpose()*weight;
 
@@ -858,12 +872,30 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
 #endif
 }
 
+void SolveDVO::visualizeHistogram(Eigen::VectorXf residi)
+{
+    ROS_INFO( "Writing Histogram");
+    std::ofstream fs;
+    fs.open("/home/eeuser/.tmp/hist");
+
+    if(fs.is_open() == false )
+    {
+        ROS_ERROR( "[visualizeHistogram] Cannot open a tmp file");
+        return;
+    }
+    fs<<residi;
+    fs.close();
+
+    system( "~/.tmp/scr" );
+    cv::imshow( "histogram", cv::imread("/home/eeuser/.tmp/hist.png") );
+}
+
 
 /// @brief The event loop. Basically an ever running while with ros::spinOnce()
 /// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
 void SolveDVO::loop()
 {
-
+/*
     ros::Rate rate(30);
     long nFrame=0;
     // Pose of now frame wrt currently set reference frame
@@ -948,17 +980,18 @@ void SolveDVO::loop()
         nFrame++;
     }
 
+*/
 
 
 
 
-/*
-    if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) )
-        ros::console::notifyLoggerLevelsChanged();
+//    if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) )
+//        ros::console::notifyLoggerLevelsChanged();
 
     char frameFileName[50];
-    const char * folder = "xdump";
-    int iFrameNum = 80;
+    const char * folder = "xdump_right2left";
+    int iFrameNum = 110;
+    const int END = 150;
 
     sprintf( frameFileName, "%s/framemono_%04d.xml", folder, iFrameNum );
     loadFromFile( frameFileName );
@@ -969,7 +1002,7 @@ void SolveDVO::loop()
 
 
 
-    for( iFrameNum=iFrameNum+1 ; iFrameNum < 680 ; iFrameNum++ )
+    for( iFrameNum=iFrameNum+1 ; iFrameNum < END ; iFrameNum++ )
     {
 
     sprintf( frameFileName, "%s/framemono_%04d.xml", folder, iFrameNum );
@@ -1013,7 +1046,7 @@ void SolveDVO::loop()
     //    rate.sleep();
     }
     }
-*/
+
 
 
 

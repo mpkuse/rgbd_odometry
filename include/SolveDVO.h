@@ -14,6 +14,8 @@
 #include <ros/ros.h>
 #include <ros/console.h>
 
+#include <fstream>
+
 #include <sophus/se3.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -36,7 +38,7 @@
 //#define GRAD_NORM( A, B ) fabs(A) + fabs(B)
 #define GRAD_NORM( A, B ) fabs(A)
 
-//#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 
 #define __REPROJECTION_LEVEL 0
 
@@ -116,9 +118,11 @@ private:
     void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3d color);
     int countSelectedPts(Eigen::MatrixXf& Gx, Eigen::MatrixXf& Gy, Eigen::MatrixXi &roi);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
+    void visualizeHistogram( Eigen::VectorXf residi );
 
     // debugging variable
     Eigen::MatrixXi __now_roi_reproj;
+    Eigen::VectorXf __residues;
 
 
 

@@ -453,14 +453,15 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 
         ////////////////////////////////////////////////
-        // DEBUG
+        //                  DEBUG                     //
         ////////////////////////////////////////////////
 
         // writing the reprojections at each iterations
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         if( level == __REPROJECTION_LEVEL )
         {
-            visualizeHistogram( __residues );
+            visualizeResidueHistogram( __residues );
+            visualizeResidueHeatMap(im_n[__REPROJECTION_LEVEL], __now_roi_reproj_values );
 
         cv::Mat outImg2;
         sOverlay(im_n[__REPROJECTION_LEVEL], __now_roi_reproj, outImg2, cv::Vec3b(255,255,0) );
@@ -579,8 +580,9 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
     if( level == __REPROJECTION_LEVEL )
     {
-        __now_roi_reproj = Eigen::MatrixXi::Zero(_now.rows(), _now.cols());
-        __residues = -Eigen::VectorXf::Ones( pts3d_ref.cols() );
+        __now_roi_reproj = Eigen::MatrixXi::Zero(_now.rows(), _now.cols()); //init to zero
+        __residues = -Eigen::VectorXf::Ones( pts3d_ref.cols() ); // init to -1
+        __now_roi_reproj_values = -Eigen::MatrixXf::Ones(_now.rows(), _now.cols()); //init to -1
 
     }
 #endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -629,6 +631,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
             if( level == __REPROJECTION_LEVEL )
             {
                 __now_roi_reproj(yy,xx) = 1;
+                __now_roi_reproj_values(yy,xx) = (r>0)?r:-r;  // ===> absolute value of r
                 __residues(i) = (r>0)?r:-r;
             }
 #endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -797,7 +800,7 @@ void SolveDVO::exponentialMap(Eigen::VectorXf& psi, Eigen::Matrix3f& outR, Eigen
     //outTr << xR, xV*t, zer_row, 1.0;
 }
 
-void SolveDVO::sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat& xim, cv::Vec3d color )
+void SolveDVO::sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat& xim, cv::Vec3b color )
 {
     assert( (eim.rows() == mask.rows()) && "Image and mask rows must match");
     assert( (eim.cols() == mask.cols()) && "Image and mask cols must match");
@@ -876,7 +879,7 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
 /// @brief Compute and visualize histogram of the residues
 /// @param[in] residi : Residue at pixel location. Nx1
 /// @note : This is customized to show integer valued bins only. 0 to 200 on x-axis. 0 to 2500 on y-axis
-void SolveDVO::visualizeHistogram(Eigen::VectorXf residi)
+void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
 {
     Eigen::VectorXf histogram = Eigen::VectorXf::Zero(260);
     for( int i=0 ; i<residi.rows() ; i++ )
@@ -885,8 +888,9 @@ void SolveDVO::visualizeHistogram(Eigen::VectorXf residi)
     }
 
     cv::Mat histPlot = cv::Mat::zeros( 500, 450, CV_8UC3 ) + cv::Scalar(255,255,255);
+    //red-dots on vertical
     cv::line(histPlot, cv::Point(1,histPlot.rows-1), cv::Point(1,0), cv::Scalar(0,0,0) );
-    for( int mag = 0 ; mag<2500 ; mag+=300 ) //red-dots on vertical
+    for( int mag = 0 ; mag<2500 ; mag+=300 )
     {
         cv::circle(histPlot, cv::Point(1,histPlot.rows-10-mag/5),  2, cv::Scalar(0,0,255), -1);
         char toS[20];
@@ -908,6 +912,70 @@ void SolveDVO::visualizeHistogram(Eigen::VectorXf residi)
         }
     }
     cv::imshow( "histogram", histPlot );
+}
+
+void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf residueAt)
+{
+    assert( (eim.rows() == residueAt.rows()) && "Image and mask rows must match");
+    assert( (eim.cols() == residueAt.cols()) && "Image and mask cols must match");
+
+    cv::Mat tmpIm, tmpIm8;
+    cv::eigen2cv( eim, tmpIm );
+    tmpIm.convertTo(tmpIm8, CV_8UC1);
+    // make to 3-channel, ie. repeat gray in all 3 channels
+    cv::Mat xim = cv::Mat::zeros(eim.rows(), eim.cols(), CV_8UC3 );
+    std::vector<cv::Mat> ch;
+    ch.push_back(tmpIm8);
+    ch.push_back(tmpIm8);
+    ch.push_back(tmpIm8);
+    cv::merge(ch,xim);
+
+
+    // make colors
+    std::vector<cv::Vec3b> colors;
+    colors.reserve(10);
+    colors[0] = cv::Vec3b(  255,255,204  );
+    colors[1] = cv::Vec3b(  255,237,160  );
+    colors[2] = cv::Vec3b(  254,217,118  );
+    colors[3] = cv::Vec3b(  254,178,76   );
+    colors[4] = cv::Vec3b(  253,141,60   );
+    colors[5] = cv::Vec3b(  252,78,42    );
+    colors[6] = cv::Vec3b(  227,26,28    );
+    colors[7] = cv::Vec3b(  189,0,38     );
+    colors[8] = cv::Vec3b(  128,0,38     );
+
+
+
+    for( int j=0 ; j<residueAt.cols() ; j++ )
+    {
+        for( int i=0 ; i<residueAt.rows() ; i++ )
+        {
+            float mag = residueAt(i,j);
+            if( mag == 0.0 ) //then red
+                xim.at<cv::Vec3b>(i,j) = colors[0];
+            else if( mag > 0.0 && mag <= 2.0 )
+                xim.at<cv::Vec3b>(i,j) = colors[1];
+            else if( mag > 2.0 && mag <= 4.0 )
+                xim.at<cv::Vec3b>(i,j) = colors[2];
+            else if( mag > 4.0 && mag <= 6.0 )
+                xim.at<cv::Vec3b>(i,j) = colors[3];
+            else if( mag > 6.0 && mag <= 10.0 )
+                xim.at<cv::Vec3b>(i,j) = colors[4];
+            else if( mag > 10.0 && mag <= 14.0 )
+                xim.at<cv::Vec3b>(i,j) = colors[5];
+            else if( mag > 14.0 && mag <= 18.0 )
+                xim.at<cv::Vec3b>(i,j) = colors[6];
+            else if( mag > 18.0 && mag <= 22.0 )
+                xim.at<cv::Vec3b>(i,j) = colors[7];
+            else if( mag > 22.0 )
+                xim.at<cv::Vec3b>(i,j) = colors[8];
+
+
+        }
+    }
+
+    cv::imshow( "heatmap", xim );
+
 }
 
 

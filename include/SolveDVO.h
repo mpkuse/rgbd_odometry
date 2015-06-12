@@ -116,14 +116,17 @@ private:
     void to_se_3(Eigen::Vector3f& w, Eigen::Matrix3f& wx);
     void to_se_3(float w0, float w1, float w2, Eigen::Matrix3f& wx);
     void exponentialMap(Eigen::VectorXf &psi, Eigen::Matrix3f &outR, Eigen::Vector3f &outT);
-    void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3d color);
+    void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3b color);
     int countSelectedPts(Eigen::MatrixXf& Gx, Eigen::MatrixXf& Gy, Eigen::MatrixXi &roi);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
-    void visualizeHistogram( Eigen::VectorXf residi );
+    void visualizeResidueHistogram( Eigen::VectorXf residi );
+    void visualizeResidueHeatMap( Eigen::MatrixXf eim, Eigen::MatrixXf residueAt );
+
 
     // debugging variable
-    Eigen::MatrixXi __now_roi_reproj;
+    Eigen::MatrixXi __now_roi_reproj; //this is a binary mask of reprojection
     Eigen::VectorXf __residues;
+    Eigen::MatrixXf __now_roi_reproj_values; //this is a mask with float values (= residues at that point)
 
 
 

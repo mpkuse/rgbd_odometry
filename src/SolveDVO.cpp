@@ -872,6 +872,10 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
 #endif
 }
 
+
+/// @brief Compute and visualize histogram of the residues
+/// @param[in] residi : Residue at pixel location. Nx1
+/// @note : This is customized to show integer valued bins only. 0 to 200 on x-axis. 0 to 2500 on y-axis
 void SolveDVO::visualizeHistogram(Eigen::VectorXf residi)
 {
     Eigen::VectorXf histogram = Eigen::VectorXf::Zero(260);
@@ -881,10 +885,19 @@ void SolveDVO::visualizeHistogram(Eigen::VectorXf residi)
     }
 
     cv::Mat histPlot = cv::Mat::zeros( 500, 450, CV_8UC3 ) + cv::Scalar(255,255,255);
+    cv::line(histPlot, cv::Point(1,histPlot.rows-1), cv::Point(1,0), cv::Scalar(0,0,0) );
+    for( int mag = 0 ; mag<2500 ; mag+=300 ) //red-dots on vertical
+    {
+        cv::circle(histPlot, cv::Point(1,histPlot.rows-10-mag/5),  2, cv::Scalar(0,0,255), -1);
+        char toS[20];
+        sprintf( toS, "%d", mag );
+        cv::putText( histPlot, toS, cv::Point(10,histPlot.rows-10-mag/5), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+    }
+
     for(int i = 0; i < 256; i++)
     {
         int mag = histogram(i);
-        line(histPlot,cv::Point(2*i,histPlot.rows-10),cv::Point(2*i,histPlot.rows-10-mag/5),cv::Scalar(255,0,0));
+        cv::line(histPlot,cv::Point(2*i,histPlot.rows-10),cv::Point(2*i,histPlot.rows-10-mag/5),cv::Scalar(255,0,0));
         if( (2*(i-1))%50 == 0 )
         {
             cv::circle( histPlot, cv::Point(2*i,histPlot.rows-10), 2, cv::Scalar(0,0,255), -1 );

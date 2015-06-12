@@ -15,6 +15,7 @@
 #include <ros/console.h>
 
 #include <fstream>
+#include <iostream>
 
 #include <sophus/se3.hpp>
 #include <Eigen/Dense>

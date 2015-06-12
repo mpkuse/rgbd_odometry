@@ -874,20 +874,27 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
 
 void SolveDVO::visualizeHistogram(Eigen::VectorXf residi)
 {
-    ROS_INFO( "Writing Histogram");
-    std::ofstream fs;
-    fs.open("/home/eeuser/.tmp/hist");
-
-    if(fs.is_open() == false )
+    Eigen::VectorXf histogram = Eigen::VectorXf::Zero(260);
+    for( int i=0 ; i<residi.rows() ; i++ )
     {
-        ROS_ERROR( "[visualizeHistogram] Cannot open a tmp file");
-        return;
+        histogram( (int)residi(i) + 1 )++;
     }
-    fs<<residi;
-    fs.close();
 
-    system( "~/.tmp/scr" );
-    cv::imshow( "histogram", cv::imread("/home/eeuser/.tmp/hist.png") );
+    cv::Mat histPlot = cv::Mat::zeros( 500, 450, CV_8UC3 ) + cv::Scalar(255,255,255);
+    for(int i = 0; i < 256; i++)
+    {
+        int mag = histogram(i);
+        line(histPlot,cv::Point(2*i,histPlot.rows-10),cv::Point(2*i,histPlot.rows-10-mag/5),cv::Scalar(255,0,0));
+        if( (2*(i-1))%50 == 0 )
+        {
+            cv::circle( histPlot, cv::Point(2*i,histPlot.rows-10), 2, cv::Scalar(0,0,255), -1 );
+            char toS[20];
+            sprintf( toS, "%d", i-1 );
+
+            cv::putText( histPlot, toS,cv::Point(2*i,histPlot.rows-20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+        }
+    }
+    cv::imshow( "histogram", histPlot );
 }
 
 

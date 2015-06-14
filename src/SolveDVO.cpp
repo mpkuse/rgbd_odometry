@@ -881,11 +881,13 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
 /// @note : This is customized to show integer valued bins only. 0 to 200 on x-axis. 0 to 2500 on y-axis
 void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
 {
+    // computation of histogram
     Eigen::VectorXf histogram = Eigen::VectorXf::Zero(260);
     for( int i=0 ; i<residi.rows() ; i++ )
     {
         histogram( (int)residi(i) + 1 )++;
     }
+
 
     cv::Mat histPlot = cv::Mat::zeros( 500, 450, CV_8UC3 ) + cv::Scalar(255,255,255);
     //red-dots on vertical
@@ -911,6 +913,30 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
             cv::putText( histPlot, toS,cv::Point(2*i,histPlot.rows-20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
         }
     }
+
+
+
+    /*
+    //plot laplacian distribution with [0, b_cap]
+    float b_cap=0; //MLE of laplacian pdistriution parameters
+    for( int i=0 ; i<residi.rows() ; i++ )
+    {
+        histogram( (int)residi(i) + 1 )++;
+        b_cap += residi(i);
+    }
+    b_cap /= (residi.rows());
+
+    char toS[20];
+    sprintf( toS, "b_cap : %f", b_cap );
+    cv::putText(histPlot, toS, cv::Point(250,20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+    for( int i=1 ; i<256 ; i++ )
+    {
+        int mag = (int) 1/(2*b_cap) * exp( -(i-1)/b_cap );
+        cv::circle(histPlot, cv::Point(2*i,histPlot.rows-10-mag/5), 2, cv::Scalar(255,255,0), -1 );
+
+    }
+    */
+
     cv::imshow( "histogram", histPlot );
 }
 
@@ -1078,61 +1104,78 @@ void SolveDVO::loop()
 
     char frameFileName[50];
     const char * folder = "xdump_right2left";
-    int iFrameNum = 110;
-    const int END = 150;
+    int iFrameNum = 0;
+    const int END = 197;
 
-    sprintf( frameFileName, "%s/framemono_%04d.xml", folder, iFrameNum );
-    loadFromFile( frameFileName );
-    setRefFrame();
+
     Eigen::Matrix3f cR = Eigen::Matrix3f::Identity();
     Eigen::Vector3f cT = Eigen::Vector3f::Zero();
-    computeJacobian();
 
 
 
     for( iFrameNum=iFrameNum+1 ; iFrameNum < END ; iFrameNum++ )
     {
 
-    sprintf( frameFileName, "%s/framemono_%04d.xml", folder, iFrameNum );
-    loadFromFile(frameFileName );
-    setNowFrame();
+        sprintf( frameFileName, "%s/framemono_%04d.xml", folder, iFrameNum );
+        loadFromFile(frameFileName );
+
+
+        if( signalGetNewRefImage == true )
+        {
+            setRefFrame();
+
+            cR = Eigen::Matrix3f::Identity();
+            cT = Eigen::Vector3f::Zero();
+
+            computeJacobian();
+
+            signalGetNewRefImage = false;
+
+        }
+        //else
+        //{
+            setNowFrame();
+
+            gaussNewtonIterations(3, 7, cR, cT );
+            gaussNewtonIterations(2, 7, cR, cT );
+            gaussNewtonIterations(1, 7, cR, cT );
+            gaussNewtonIterations(0, 100, cR, cT );
+        //}
+
+        // Some displaying
+        {
+            cv::Mat outImg;
+            sOverlay(im_n[__REPROJECTION_LEVEL], __now_roi_reproj, outImg, cv::Vec3b(0,255,0) );
+            cv::imshow( "reprojected markers onto now-frame", outImg );
+            cv::Mat outImg2;
+            sOverlay(im_r[__REPROJECTION_LEVEL], _roi[__REPROJECTION_LEVEL], outImg2, cv::Vec3b(0,0,255) );
+            cv::imshow( "markers on the ref-frame", outImg2);
+            cv::moveWindow("reprojected markers onto now-drame", 0, 400 );
+            char ket = cv::waitKey(0);
+            if( ket == 27 ) //if ESC Quit the program
+                break;
+            else if( ket == 'c' ) //if c pressed, then signal change of ref frame
+                signalGetNewRefImage = true;
+            else
+                ROS_INFO( "/./././ Retrive Next Frame ././././ ");
+
+        }
 
 
 
-    //gaussNewtonIterations(3, 11, cR, cT ); //dont use 3, estimates are too bad
-    //gaussNewtonIterations(2, 2, cR, cT );
-    gaussNewtonIterations(1, 5, cR, cT );
-    gaussNewtonIterations(0, 100, cR, cT );
 
-    // Some displaying
-    {
-        cv::Mat outImg;
-        sOverlay(im_n[__REPROJECTION_LEVEL], __now_roi_reproj, outImg, cv::Vec3b(0,255,0) );
-        cv::imshow( "reprojected markers onto now-frame", outImg );
-        cv::Mat outImg2;
-        sOverlay(im_r[__REPROJECTION_LEVEL], _roi[__REPROJECTION_LEVEL], outImg2, cv::Vec3b(0,0,255) );
-        cv::imshow( "markers on the ref-frame", outImg2);
-        cv::moveWindow("reprojected markers onto now-drame", 0, 400 );
-        char ket = cv::waitKey(0);
-        if( ket == 27 )
-            break;
-    }
+        //ros::Rate rate(30);
+        //while( ros::ok() )
+        {
+            ros::spinOnce();
+            //publishCurrentPointCloud();
+            publishPointCloud( _spCord[0], _intensities[0] );
 
+            publishPoseFinal(cR, cT);
 
-
-
-    //ros::Rate rate(30);
-    //while( ros::ok() )
-    {
-        ros::spinOnce();
-        //publishCurrentPointCloud();
-        publishPointCloud( _spCord[0], _intensities[0] );
-
-        publishPoseFinal(cR, cT);
-
-    //    cv::waitKey(3);
-    //    rate.sleep();
-    }
+            //    cv::waitKey(3);
+            //    rate.sleep();
+        }
     }
 
 

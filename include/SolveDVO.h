@@ -121,12 +121,14 @@ private:
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
     void visualizeResidueHistogram( Eigen::VectorXf residi );
     void visualizeResidueHeatMap( Eigen::MatrixXf eim, Eigen::MatrixXf residueAt );
+    void visualizeReprojectedDepth( Eigen::MatrixXf eim, Eigen::MatrixXf reprojDepth );
 
 
     // debugging variable
-    Eigen::MatrixXi __now_roi_reproj; //this is a binary mask of reprojection
-    Eigen::VectorXf __residues;
+    Eigen::MatrixXi __now_roi_reproj; //this is a `binary` mask of reprojected points
+    Eigen::VectorXf __residues;       //list of residue values, -1 ==> this pixel is not visible in reprojected frame
     Eigen::MatrixXf __now_roi_reproj_values; //this is a mask with float values (= residues at that point)
+    Eigen::MatrixXf __reprojected_depth; //mask of float values denoting depth values (in mm) in now frames
 
 
 

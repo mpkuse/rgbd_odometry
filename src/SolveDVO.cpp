@@ -462,6 +462,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         {
             visualizeResidueHistogram( __residues );
             visualizeResidueHeatMap(im_n[__REPROJECTION_LEVEL], __now_roi_reproj_values );
+            visualizeReprojectedDepth(im_n[__REPROJECTION_LEVEL], __reprojected_depth);
 
         cv::Mat outImg2;
         sOverlay(im_n[__REPROJECTION_LEVEL], __now_roi_reproj, outImg2, cv::Vec3b(255,255,0) );
@@ -578,11 +579,14 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
 
 
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+    Eigen::MatrixXf pts3d_n_copy = pts3d_n; //note that this is a deep-copy
+
     if( level == __REPROJECTION_LEVEL )
     {
         __now_roi_reproj = Eigen::MatrixXi::Zero(_now.rows(), _now.cols()); //init to zero
         __residues = -Eigen::VectorXf::Ones( pts3d_ref.cols() ); // init to -1
         __now_roi_reproj_values = -Eigen::MatrixXf::Ones(_now.rows(), _now.cols()); //init to -1
+        __reprojected_depth = -Eigen::MatrixXf::Ones( _now.rows(), _now.cols() );
 
     }
 #endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -600,7 +604,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
     Eigen::ArrayXXf lastRow_inv = pts3d_n.row(2).array().inverse();
     for( int i=0 ; i<3 ; i++ )
         pts3d_n.row(i).array() *= lastRow_inv;
-//    pts3d_n.array() *= lastRow_inv;
+
 
     Eigen::MatrixXf pts3d_un_normalized = scaleMatrix * K * pts3d_n;
 
@@ -633,6 +637,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
                 __now_roi_reproj(yy,xx) = 1;
                 __now_roi_reproj_values(yy,xx) = (r>0)?r:-r;  // ===> absolute value of r
                 __residues(i) = (r>0)?r:-r;
+                __reprojected_depth(yy,xx) = pts3d_n_copy(2, i );
             }
 #endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
 
@@ -967,48 +972,175 @@ void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf resi
 
     // make colors
     std::vector<cv::Vec3b> colors;
-    colors.reserve(10);
-    colors[0] = cv::Vec3b(  255,255,204  );
-    colors[1] = cv::Vec3b(  255,237,160  );
-    colors[2] = cv::Vec3b(  254,217,118  );
-    colors[3] = cv::Vec3b(  254,178,76   );
-    colors[4] = cv::Vec3b(  253,141,60   );
-    colors[5] = cv::Vec3b(  252,78,42    );
-    colors[6] = cv::Vec3b(  227,26,28    );
-    colors[7] = cv::Vec3b(  189,0,38     );
-    colors[8] = cv::Vec3b(  128,0,38     );
+    colors.reserve(32);
 
-
+// defining 32 colors
+    {
+        colors[0   ] = cv::Vec3b( 159     ,0     ,0 );
+        colors[1   ] = cv::Vec3b( 191     ,0     ,0 );
+        colors[2   ] = cv::Vec3b( 223     ,0     ,0 );
+        colors[3   ] = cv::Vec3b( 255     ,0     ,0 );
+        colors[4   ] = cv::Vec3b( 255    ,31     ,0 );
+        colors[5   ] = cv::Vec3b( 255    ,63     ,0 );
+        colors[6   ] = cv::Vec3b( 255    ,95     ,0 );
+        colors[7   ] = cv::Vec3b( 255   ,127     ,0 );
+        colors[8   ] = cv::Vec3b( 255   ,159     ,0 );
+        colors[9   ] = cv::Vec3b( 255   ,191     ,0 );
+        colors[10   ] = cv::Vec3b( 255   ,223     ,0 );
+        colors[11   ] = cv::Vec3b( 255   ,255     ,0 );
+        colors[12   ] = cv::Vec3b( 223   ,255    ,31 );
+        colors[13   ] = cv::Vec3b( 191   ,255    ,63 );
+        colors[14   ] = cv::Vec3b( 159   ,255    ,95 );
+        colors[15   ] = cv::Vec3b( 127   ,255   ,127 );
+        colors[16    ] = cv::Vec3b( 95   ,255   ,159 );
+        colors[17    ] = cv::Vec3b( 63   ,255   ,191 );
+        colors[18    ] = cv::Vec3b( 31   ,255   ,223 );
+        colors[19     ] = cv::Vec3b( 0   ,255   ,255 );
+        colors[20     ] = cv::Vec3b( 0   ,223   ,255 );
+        colors[21     ] = cv::Vec3b( 0   ,191   ,255 );
+        colors[22     ] = cv::Vec3b( 0   ,159   ,255 );
+        colors[23     ] = cv::Vec3b( 0   ,127   ,255 );
+        colors[24     ] = cv::Vec3b( 0    ,95   ,255 );
+        colors[25     ] = cv::Vec3b( 0    ,63   ,255 );
+        colors[26     ] = cv::Vec3b( 0    ,31   ,255 );
+        colors[27     ] = cv::Vec3b( 0     ,0   ,255 );
+        colors[28     ] = cv::Vec3b( 0     ,0   ,223 );
+        colors[29     ] = cv::Vec3b( 0     ,0   ,191 );
+        colors[30     ] = cv::Vec3b( 0     ,0   ,159 );
+        colors[31     ] = cv::Vec3b( 0     ,0   ,127 );
+    }
 
     for( int j=0 ; j<residueAt.cols() ; j++ )
     {
         for( int i=0 ; i<residueAt.rows() ; i++ )
         {
             float mag = residueAt(i,j);
-            if( mag == 0.0 ) //then red
-                xim.at<cv::Vec3b>(i,j) = colors[0];
-            else if( mag > 0.0 && mag <= 2.0 )
-                xim.at<cv::Vec3b>(i,j) = colors[1];
-            else if( mag > 2.0 && mag <= 4.0 )
-                xim.at<cv::Vec3b>(i,j) = colors[2];
-            else if( mag > 4.0 && mag <= 6.0 )
-                xim.at<cv::Vec3b>(i,j) = colors[3];
-            else if( mag > 6.0 && mag <= 10.0 )
-                xim.at<cv::Vec3b>(i,j) = colors[4];
-            else if( mag > 10.0 && mag <= 14.0 )
-                xim.at<cv::Vec3b>(i,j) = colors[5];
-            else if( mag > 14.0 && mag <= 18.0 )
-                xim.at<cv::Vec3b>(i,j) = colors[6];
-            else if( mag > 18.0 && mag <= 22.0 )
-                xim.at<cv::Vec3b>(i,j) = colors[7];
-            else if( mag > 22.0 )
-                xim.at<cv::Vec3b>(i,j) = colors[8];
-
-
+            if( mag< 0.0f )
+                continue;
+            if( mag > 25.0f )
+                xim.at<cv::Vec3b>(i,j) = colors[31];
+            else
+            {
+                int colorIndx = (int)mag;
+                xim.at<cv::Vec3b>(i,j) = colors[colorIndx];
+            }
         }
     }
 
-    cv::imshow( "heatmap", xim );
+    cv::imshow( "residues heatmap", xim );
+
+}
+
+void SolveDVO::visualizeReprojectedDepth(Eigen::MatrixXf eim, Eigen::MatrixXf reprojDepth)
+{
+    assert( (eim.rows() == residueAt.rows()) && "Image and mask rows must match");
+    assert( (eim.cols() == residueAt.cols()) && "Image and mask cols must match");
+
+    cv::Mat tmpIm, tmpIm8;
+    cv::eigen2cv( eim, tmpIm );
+    tmpIm.convertTo(tmpIm8, CV_8UC1);
+    // make to 3-channel, ie. repeat gray in all 3 channels
+    cv::Mat xim = cv::Mat::zeros(eim.rows(), eim.cols(), CV_8UC3 );
+    std::vector<cv::Mat> ch;
+    ch.push_back(tmpIm8);
+    ch.push_back(tmpIm8);
+    ch.push_back(tmpIm8);
+    cv::merge(ch,xim);
+
+
+    std::vector<cv::Vec3b> colors;
+    colors.reserve(64);
+ // defining 64 colors
+    {
+        colors[0   ] = cv::Vec3b( 143     ,0     ,0 );
+        colors[1   ] = cv::Vec3b( 159     ,0     ,0 );
+        colors[2   ] = cv::Vec3b( 175     ,0     ,0 );
+        colors[3   ] = cv::Vec3b( 191     ,0     ,0 );
+        colors[4   ] = cv::Vec3b( 207     ,0     ,0 );
+        colors[5   ] = cv::Vec3b( 223     ,0     ,0 );
+        colors[6   ] = cv::Vec3b( 239     ,0     ,0 );
+        colors[7   ] = cv::Vec3b( 255     ,0     ,0 );
+        colors[8   ] = cv::Vec3b( 255    ,15     ,0 );
+        colors[9   ] = cv::Vec3b( 255    ,31     ,0 );
+       colors[10   ] = cv::Vec3b( 255    ,47     ,0 );
+       colors[11   ] = cv::Vec3b( 255    ,63     ,0 );
+       colors[12   ] = cv::Vec3b( 255    ,79     ,0 );
+       colors[13   ] = cv::Vec3b( 255    ,95     ,0 );
+       colors[14   ] = cv::Vec3b( 255   ,111     ,0 );
+       colors[15   ] = cv::Vec3b( 255   ,127     ,0 );
+       colors[16   ] = cv::Vec3b( 255   ,143     ,0 );
+       colors[17   ] = cv::Vec3b( 255   ,159     ,0 );
+       colors[18   ] = cv::Vec3b( 255   ,175     ,0 );
+       colors[19   ] = cv::Vec3b( 255   ,191     ,0 );
+       colors[20   ] = cv::Vec3b( 255   ,207     ,0 );
+       colors[21   ] = cv::Vec3b( 255   ,223     ,0 );
+       colors[22   ] = cv::Vec3b( 255   ,239     ,0 );
+       colors[23   ] = cv::Vec3b( 255   ,255     ,0 );
+       colors[24   ] = cv::Vec3b( 239   ,255    ,15 );
+       colors[25   ] = cv::Vec3b( 223   ,255    ,31 );
+       colors[26   ] = cv::Vec3b( 207   ,255    ,47 );
+       colors[27   ] = cv::Vec3b( 191   ,255    ,63 );
+       colors[28   ] = cv::Vec3b( 175   ,255    ,79 );
+       colors[29   ] = cv::Vec3b( 159   ,255    ,95 );
+       colors[30   ] = cv::Vec3b( 143   ,255   ,111 );
+       colors[31   ] = cv::Vec3b( 127   ,255   ,127 );
+       colors[32   ] = cv::Vec3b( 111   ,255   ,143 );
+       colors[33    ] = cv::Vec3b( 95   ,255   ,159 );
+       colors[34    ] = cv::Vec3b( 79   ,255   ,175 );
+       colors[35    ] = cv::Vec3b( 63   ,255   ,191 );
+       colors[36    ] = cv::Vec3b( 47   ,255   ,207 );
+       colors[37    ] = cv::Vec3b( 31   ,255   ,223 );
+       colors[38    ] = cv::Vec3b( 15   ,255   ,239 );
+       colors[39     ] = cv::Vec3b( 0   ,255   ,255 );
+       colors[40     ] = cv::Vec3b( 0   ,239   ,255 );
+       colors[41     ] = cv::Vec3b( 0   ,223   ,255 );
+       colors[42     ] = cv::Vec3b( 0   ,207   ,255 );
+       colors[43     ] = cv::Vec3b( 0   ,191   ,255 );
+       colors[44     ] = cv::Vec3b( 0   ,175   ,255 );
+       colors[45     ] = cv::Vec3b( 0   ,159   ,255 );
+       colors[46     ] = cv::Vec3b( 0   ,143   ,255 );
+       colors[47     ] = cv::Vec3b( 0   ,127   ,255 );
+       colors[48     ] = cv::Vec3b( 0   ,111   ,255 );
+       colors[49     ] = cv::Vec3b( 0    ,95   ,255 );
+       colors[50     ] = cv::Vec3b( 0    ,79   ,255 );
+       colors[51     ] = cv::Vec3b( 0    ,63   ,255 );
+       colors[52     ] = cv::Vec3b( 0    ,47   ,255 );
+       colors[53     ] = cv::Vec3b( 0    ,31   ,255 );
+       colors[54     ] = cv::Vec3b( 0    ,15   ,255 );
+       colors[55     ] = cv::Vec3b( 0     ,0   ,255 );
+       colors[56     ] = cv::Vec3b( 0     ,0   ,239 );
+       colors[57     ] = cv::Vec3b( 0     ,0   ,223 );
+       colors[58     ] = cv::Vec3b( 0     ,0   ,207 );
+       colors[59     ] = cv::Vec3b( 0     ,0   ,191 );
+       colors[60     ] = cv::Vec3b( 0     ,0   ,175 );
+       colors[61     ] = cv::Vec3b( 0     ,0   ,159 );
+       colors[62     ] = cv::Vec3b( 0     ,0   ,143 );
+       colors[63     ] = cv::Vec3b( 0     ,0   ,127 );
+    }
+
+    for( int j=0 ; j<reprojDepth.cols() ; j++ )
+    {
+        for( int i=0 ; i<reprojDepth.rows() ; i++ )
+        {
+            float mag = reprojDepth(i,j); //mag \in (0, 10000)
+            if( mag < 0.0f )
+                continue;
+            float colorIndx;
+
+            if( mag < 500.0f )
+                colorIndx = 0;
+            else if( mag > 5500.0f )
+                colorIndx = 0;
+            else
+                colorIndx = (int)((mag-500.0)/5000.0f * 60.0f) + 1;
+
+            xim.at<cv::Vec3b>(i,j) = colors[colorIndx];
+        }
+    }
+
+    cv::imshow( "reprojected depth heatmaps", xim );
+
+
 
 }
 

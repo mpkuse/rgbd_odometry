@@ -886,37 +886,46 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
     for( int i=0 ; i<residi.rows() ; i++ )
     {
         histogram( (int)residi(i) + 1 )++;
+        // +1 is to take care of the '-1' in the absolute-residues which means the residue at this point is not calculated
+        // since the re-projected point is not visible in now frame
     }
+    histogram /= residi.rows(); //normalized the histogram, now histogram \in [0,1]
 
 
     cv::Mat histPlot = cv::Mat::zeros( 500, 450, CV_8UC3 ) + cv::Scalar(255,255,255);
     //red-dots on vertical
     cv::line(histPlot, cv::Point(1,histPlot.rows-1), cv::Point(1,0), cv::Scalar(0,0,0) );
-    for( int mag = 0 ; mag<2500 ; mag+=300 )
+    for( float mag = 0 ; mag< .3f ; mag+=0.02f )
     {
-        cv::circle(histPlot, cv::Point(1,histPlot.rows-10-mag/5),  2, cv::Scalar(0,0,255), -1);
+        cv::circle(histPlot, cv::Point(1,histPlot.rows-20-int(mag*2000.0)),  2, cv::Scalar(0,0,255), -1);
         char toS[20];
-        sprintf( toS, "%d", mag );
-        cv::putText( histPlot, toS, cv::Point(10,histPlot.rows-10-mag/5), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+        sprintf( toS, "%.2f", mag );
+        cv::putText( histPlot, toS, cv::Point(10,histPlot.rows-20-int(mag*2000.0)), cv::FONT_HERSHEY_COMPLEX_SMALL, .7, cv::Scalar(0,0,0) );
     }
 
+
+//    char tmpS[20];
+//    sprintf( tmpS, "%f", histogram(i) );
+//    cv::putText(histPlot, tmpS, cv::Point(250,20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+
+    // histogram bars draw
     for(int i = 0; i < 256; i++)
     {
-        int mag = histogram(i);
-        cv::line(histPlot,cv::Point(2*i,histPlot.rows-10),cv::Point(2*i,histPlot.rows-10-mag/5),cv::Scalar(255,0,0));
+        float mag = histogram(i);
+        cv::line(histPlot,cv::Point(2*i,histPlot.rows-20),cv::Point(2*i,histPlot.rows-20-int(mag*2000.0)),cv::Scalar(255,0,0));
         if( (2*(i-1))%50 == 0 )
         {
-            cv::circle( histPlot, cv::Point(2*i,histPlot.rows-10), 2, cv::Scalar(0,0,255), -1 );
+            cv::circle( histPlot, cv::Point(2*i,histPlot.rows-20), 2, cv::Scalar(0,0,255), -1 );
             char toS[20];
             sprintf( toS, "%d", i-1 );
 
-            cv::putText( histPlot, toS,cv::Point(2*i,histPlot.rows-20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+            cv::putText( histPlot, toS,cv::Point(2*i,histPlot.rows-5), cv::FONT_HERSHEY_COMPLEX_SMALL, .7, cv::Scalar(0,0,0) );
         }
     }
 
 
 
-    /*
+
     //plot laplacian distribution with [0, b_cap]
     float b_cap=0; //MLE of laplacian pdistriution parameters
     for( int i=0 ; i<residi.rows() ; i++ )
@@ -931,11 +940,11 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
     cv::putText(histPlot, toS, cv::Point(250,20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
     for( int i=1 ; i<256 ; i++ )
     {
-        int mag = (int) 1/(2*b_cap) * exp( -(i-1)/b_cap );
-        cv::circle(histPlot, cv::Point(2*i,histPlot.rows-10-mag/5), 2, cv::Scalar(255,255,0), -1 );
-
+        float mag = 1/(2*b_cap) * exp( -(i-1)/b_cap );
+        cv::circle(histPlot, cv::Point(2*i,histPlot.rows-20-mag*2000.), 2, cv::Scalar(255,255,0), -1 );
     }
-    */
+
+
 
     cv::imshow( "histogram", histPlot );
 }

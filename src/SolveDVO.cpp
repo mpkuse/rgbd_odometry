@@ -925,7 +925,6 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
 
 
 
-
     //plot laplacian distribution with [0, b_cap]
     float b_cap=0; //MLE of laplacian pdistriution parameters
     for( int i=0 ; i<residi.rows() ; i++ )
@@ -935,9 +934,9 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
     }
     b_cap /= (residi.rows());
 
-    char toS[20];
-    sprintf( toS, "b_cap : %f", b_cap );
-    cv::putText(histPlot, toS, cv::Point(250,20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+    char toS[100];
+    sprintf( toS, "Laplacian Distribution MLE Estimate\nb_cap : %.3f", b_cap );
+    cv::putText(histPlot, toS, cv::Point(40,20), cv::FONT_HERSHEY_COMPLEX_SMALL, .5, cv::Scalar(0,0,0) );
     for( int i=1 ; i<256 ; i++ )
     {
         float mag = 1/(2*b_cap) * exp( -(i-1)/b_cap );
@@ -946,7 +945,7 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
 
 
 
-    cv::imshow( "histogram", histPlot );
+    cv::imshow( "PDF of residues", histPlot );
 }
 
 void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf residueAt)

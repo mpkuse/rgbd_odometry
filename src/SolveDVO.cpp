@@ -1033,8 +1033,8 @@ void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf resi
 
 void SolveDVO::visualizeReprojectedDepth(Eigen::MatrixXf eim, Eigen::MatrixXf reprojDepth)
 {
-    assert( (eim.rows() == residueAt.rows()) && "Image and mask rows must match");
-    assert( (eim.cols() == residueAt.cols()) && "Image and mask cols must match");
+    assert( (eim.rows() == reprojDepth.rows()) && "Image and mask rows must match");
+    assert( (eim.cols() == reprojDepth.cols()) && "Image and mask cols must match");
 
     cv::Mat tmpIm, tmpIm8;
     cv::eigen2cv( eim, tmpIm );

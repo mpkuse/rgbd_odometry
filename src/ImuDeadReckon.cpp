@@ -113,8 +113,8 @@ void ImuDeadReckon::eventLoop()
         publishPose();
 
 
-        ROS_INFO_STREAM( "Lin Acc : "<< lin_acc.transpose() );
-        ROS_INFO_STREAM( "Ang Vel : "<< ang_vel.transpose() );
+        ROS_INFO_STREAM_THROTTLE( 5, "(every5 sec) Lin Acc : "<< lin_acc.transpose() );
+        ROS_INFO_STREAM_THROTTLE( 5, "Ang Vel : "<< ang_vel.transpose() );
 
         rate.sleep();
     }

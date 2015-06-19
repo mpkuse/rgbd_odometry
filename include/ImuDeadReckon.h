@@ -14,6 +14,7 @@
 #include <ros/ros.h>
 
 #include <sensor_msgs/Imu.h>
+#include <geometry_msgs/PoseStamped.h>
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -33,10 +34,18 @@ private:
     // Publishers and Subscribers
     ros::NodeHandle nh;
     ros::Subscriber sub;
+    ros::Publisher pub_dr_pose; ///< Dead reckoning pose
+    char const * rviz_frame_id;
+
+
 
     // IMU Intrinsics
     float a_b, a_var; ///< accelerometer bias and variance
+    Eigen::Vector3f aBias;
     float g_b, g_var; ///< gyroscope bias and variance
+    Eigen::Vector3f gBias;
+
+    Eigen::Vector3f gravity;
     bool isIMUIntrinsicsReady;
 
     // Current IMU Data
@@ -47,6 +56,23 @@ private:
 
     // Callback
     void imuDataRcvd( const sensor_msgs::Imu& msg );
+
+
+    // Nominal State Variables
+    Eigen::Vector3f nsv_p; ///< Position
+    Eigen::Vector3f nsv_v; ///< Velocity
+    Eigen::Quaternionf nsv_q; ///< Quaternion
+    float delT;
+
+    // updates
+    void updateNominalStateWithCurrentMeasurements();
+
+    //helpers
+    void makeQuaternionFromVector(Eigen::Vector3f &inVec, Eigen::Quaternionf &outQuat  );
+
+
+    // Pusblishers routines
+    void publishPose();
 
 
 };

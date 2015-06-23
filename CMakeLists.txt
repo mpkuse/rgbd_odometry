@@ -172,6 +172,12 @@ add_executable(imuTest
 )
 
 
+add_executable(imuDR
+    src/imuDRMain.cpp
+    src/ImuDeadReckon.cpp
+    include/ImuDeadReckon.h
+)
+
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
@@ -210,7 +216,9 @@ add_executable(imuTest
    ${catkin_LIBRARIES}
  )
 
-
+ target_link_libraries(imuDR
+   ${catkin_LIBRARIES}
+ )
 
 #############
 ## Install ##

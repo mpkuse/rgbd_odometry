@@ -39,7 +39,10 @@
 //#define GRAD_NORM( A, B ) fabs(A) + fabs(B)
 #define GRAD_NORM( A, B ) fabs(A)
 
-#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+//#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+#define __COLLECT_EPSILON_DEBUG__DATA_
+#define _IGNORE__NEAR_PTS_DISPLAY____
+
 
 #define __REPROJECTION_LEVEL 0
 
@@ -170,6 +173,7 @@ private:
     // constants
     float grad_thresh;
     float ratio_of_visible_pts_thresh; //should be between [0, 1]
+    float laplacianThreshExitCond; //set this to typically 15-20
 
 
 

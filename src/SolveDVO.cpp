@@ -17,7 +17,8 @@ SolveDVO::SolveDVO()
     // Setting up some global constants
     grad_thresh = 3;
     rviz_frame_id = "denseVO";
-    ratio_of_visible_pts_thresh = 0.85;
+    ratio_of_visible_pts_thresh = 0.45;
+    laplacianThreshExitCond = 20.0f;
 
 
 
@@ -578,7 +579,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
     Eigen::MatrixXf pts3d_n = cR.transpose() * ( pts3d_ref - cTRep );
 
 
-#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+#if defined(__SHOW_REPROJECTIONS_EACH_ITERATION__) || defined( __COLLECT_EPSILON_DEBUG__DATA_)
     Eigen::MatrixXf pts3d_n_copy = pts3d_n; //note that this is a deep-copy
 
     if( level == __REPROJECTION_LEVEL )
@@ -610,6 +611,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
 
 
     int nPtVisible = 0;
+    int nSmalkDepthPoint = 0;
     for( int i=0 ; i<pts3d_un_normalized.cols() ; i++ )
     {
         int xx = (int)pts3d_un_normalized(0,i);
@@ -626,18 +628,27 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
             r = grays_ref(i) - _now(yy,xx);
 
             float weight = getWeightOf( r );
+            if( pts3d_ref(2,i) < 100.0f ) // if the Z of a point is small ignore that point. Smaller Z (usually less than 400) are inaccurate
+                weight = 0.0;
+
 
 
             A += (jacob[i].transpose() * jacob[i])*weight;
 
 
-#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+#if defined(__SHOW_REPROJECTIONS_EACH_ITERATION__) || defined( __COLLECT_EPSILON_DEBUG__DATA_)
             if( level == __REPROJECTION_LEVEL )
             {
-                __now_roi_reproj(yy,xx) = 1;
-                __now_roi_reproj_values(yy,xx) = (r>0)?r:-r;  // ===> absolute value of r
-                __residues(i) = (r>0)?r:-r;
-                __reprojected_depth(yy,xx) = pts3d_n_copy(2, i );
+#if defined(_IGNORE__NEAR_PTS_DISPLAY____)
+                if( pts3d_ref(2,i) >= 100.0f )
+#endif
+                {
+                    __now_roi_reproj(yy,xx) = 1;
+                    __now_roi_reproj_values(yy,xx) = (r>0)?r:-r;  // ===> absolute value of r
+                    __residues(i) = (r>0)?r:-r;
+                    __reprojected_depth(yy,xx) = pts3d_n_copy(2, i );
+                }
+
             }
 #endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
 
@@ -931,17 +942,22 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
 
 
     //plot laplacian distribution with [0, b_cap]
-    float b_cap=0; //MLE of laplacian pdistriution parameters
+    float b_cap=0; //MLE of laplacian distribution parameters
     for( int i=0 ; i<residi.rows() ; i++ )
     {
         histogram( (int)residi(i) + 1 )++;
         b_cap += residi(i);
     }
     b_cap /= (residi.rows());
+    if( b_cap > laplacianThreshExitCond )
+        signalGetNewRefImage = true;
+
+
 
     char toS[100];
     sprintf( toS, "Laplacian Distribution MLE Estimate\nb_cap : %.3f", b_cap );
     cv::putText(histPlot, toS, cv::Point(40,20), cv::FONT_HERSHEY_COMPLEX_SMALL, .5, cv::Scalar(0,0,0) );
+    // Plot the estimated laplacian distribution
     for( int i=1 ; i<256 ; i++ )
     {
         float mag = 1/(2*b_cap) * exp( -(i-1)/b_cap );
@@ -1279,11 +1295,15 @@ void SolveDVO::loop()
             gaussNewtonIterations(3, 7, cR, cT );
             gaussNewtonIterations(2, 7, cR, cT );
             gaussNewtonIterations(1, 7, cR, cT );
-            gaussNewtonIterations(0, 100, cR, cT );
+            gaussNewtonIterations(0, 7, cR, cT );
         //}
 
         // Some displaying
         {
+                visualizeResidueHistogram( __residues );
+                visualizeResidueHeatMap(im_n[__REPROJECTION_LEVEL], __now_roi_reproj_values );
+                visualizeReprojectedDepth(im_n[__REPROJECTION_LEVEL], __reprojected_depth);
+
             cv::Mat outImg;
             sOverlay(im_n[__REPROJECTION_LEVEL], __now_roi_reproj, outImg, cv::Vec3b(0,255,0) );
             cv::imshow( "reprojected markers onto now-frame", outImg );

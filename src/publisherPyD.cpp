@@ -11,7 +11,10 @@
 #include <PrimeSenseCam.h>
 
 
-//#define __ENABLE_IM_WRITE__
+//#define __ENABLE_IM_WRITE__ //will also write a raw-video file
+#define __ENABLE_VIDEO_WRITE__ //default is yuv
+#define __FMT_Y4M__
+
 
 
 cv::Mat cameraMatrix, distCoeffs;
@@ -57,6 +60,64 @@ void undistortDFrame( cv::Mat& src, cv::Mat& dst )
 //    cv::waitKey(3);
 }
 
+
+
+string type2str(int type) {
+  string r;
+
+  uchar depth = type & CV_MAT_DEPTH_MASK;
+  uchar chans = 1 + (type >> CV_CN_SHIFT);
+
+  switch ( depth ) {
+    case CV_8U:  r = "8U"; break;
+    case CV_8S:  r = "8S"; break;
+    case CV_16U: r = "16U"; break;
+    case CV_16S: r = "16S"; break;
+    case CV_32S: r = "32S"; break;
+    case CV_32F: r = "32F"; break;
+    case CV_64F: r = "64F"; break;
+    default:     r = "User"; break;
+  }
+
+  r += "C";
+  r += (chans+'0');
+
+  return r;
+}
+
+
+/// @brief Writes the binary file with a rgbframe. Binary file is in .yuv (444) video format (Planar 444)
+void frameWrite( std::fstream& fbin, cv::Mat& rgbFrame )
+{
+    assert( fbin.is_open() );
+    assert( rgbFrame.rows > 0 && rgbFrame.cols > 0 );
+
+    //convert frame to YUV
+    cv::Mat yuv;
+    cv::cvtColor( rgbFrame, yuv, CV_RGB2YUV );
+
+    // yuv is of the type CV_8UC3
+    ROS_INFO_STREAM_ONCE( "yuv.type : "<< type2str(yuv.type() ));
+
+
+#ifdef __FMT_Y4M__
+    //y4m each frame header
+    char headerBuf[100];
+    int charWr = sprintf( headerBuf, "FRAME%c",0x0a);
+    fbin.write(headerBuf, charWr );
+#endif
+
+
+    std::vector<cv::Mat> mv;
+    cv::split( yuv, mv);
+    fbin.write(mv[0].data, mv[0].rows * mv[0].cols );
+    fbin.write(mv[1].data, mv[0].rows * mv[0].cols );
+    fbin.write(mv[2].data, mv[0].rows * mv[0].cols );
+
+}
+
+
+
 ///@file Publishes the Image Pyramid as `rgbd_odometry/RGBDFramePyd`
 int main( int argc, char ** argv )
 {
@@ -83,11 +144,57 @@ int main( int argc, char ** argv )
     PrimeSenseCam cam;
     cam.start();
 
+
     cv::Mat frame, dframe, framemono;
     cv::Mat tmpf, tmpd;
     cv::Mat orgf, orgd;
 
     int nFrame = 0;
+
+#ifdef __ENABLE_VIDEO_WRITE__
+    //
+    // Open Binary stream and write y4m header
+
+    //for .yuv/y4m file (444 format)
+    std::fstream fbin;
+
+    char binFileName[150];
+
+#ifdef __FMT_Y4M__
+    sprintf( binFileName, "/home/eeuser/x265_trials/cam.y4m" );
+#endif
+
+#ifndef __FMT_Y4M__
+    sprintf( binFileName, "/home/eeuser/x265_trials/cam.yuv" );
+#endif
+
+
+
+    fbin.open( binFileName, std::ios::binary| std::ios::out | std::ios::trunc );
+
+    if( !fbin )
+        ROS_ERROR( "Cannot Open video binary file %s", binFileName );
+    else
+        ROS_INFO( "Opened binary video file %s for writing", binFileName );
+
+
+#ifdef __FMT_Y4M__
+    // Write Y4M header
+    char headerBuf[100];
+    int charWr = sprintf( headerBuf, "YUV4MPEG2 ");
+    assert( charWr == 10 );
+    fbin.write(headerBuf, charWr );
+    charWr = sprintf( headerBuf, "W%d H%d F30:1 C444%c", 320, 240, 0x0a );
+    fbin.write(headerBuf, charWr );
+#endif //__FMT_Y4M__
+
+#endif //__ENABLE_VIDEO_WRITE__
+
+
+
+
+
+
 
     while( ros::ok() )
     {
@@ -116,7 +223,6 @@ int main( int argc, char ** argv )
 
         cv::FileStorage fs(fName, cv::FileStorage::WRITE);
 
-
         ///////////////////////////////////////////////////
 #endif //__ENABLE_IM_WRITE__
 
@@ -139,6 +245,7 @@ int main( int argc, char ** argv )
 
             if( i==0 )
                 cv::imwrite( imName, framemono );
+
             char monoName[100], depthName[100];
             sprintf( monoName, "mono_%d", i );
             sprintf( depthName, "depth_%d", i );
@@ -148,6 +255,11 @@ int main( int argc, char ** argv )
             ///////////////////////////////////////////////////
 #endif //__ENABLE_IM_WRITE__
 
+
+#ifdef __ENABLE_VIDEO_WRITE__
+            if( i==0 )
+                frameWrite( fbin, frame );
+#endif
 
 
             sensor_msgs::ImagePtr frame_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", frame).toImageMsg();
@@ -165,13 +277,15 @@ int main( int argc, char ** argv )
         fs.release();
 #endif //__ENABLE_IM_WRITE__
 
-
-
         pub.publish(msg);
         //pub_im.publish( frame_msg );
 
         rate.sleep();
         nFrame++;
     }
+
+#ifdef __ENABLE_VIDEO_WRITE__
+        fbin.close();
+#endif
 
 }

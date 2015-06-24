@@ -48,6 +48,9 @@
 
 #define __REPROJECTION_LEVEL 0
 
+#define _JACOBIAN__DISTANCE_TRANSFORM
+
+
 
 typedef std::vector<Eigen::RowVectorXf> JacobianList;
 typedef Eigen::MatrixXf ImCordList;  //2xN
@@ -142,8 +145,8 @@ private:
     //other debuging functions
     void imshowEigenImage(const char *winName, Eigen::MatrixXd eim);
     void imshowEigenImage(const char *winName, Eigen::MatrixXf eim);
-    void loadFromFile( const char * xmlFileName );
-    void printFrameIndex2Scratch( cv::Mat scratch, long nowIndx, long lastRef, double time4Jacobian, bool cleanScratch  );
+    bool loadFromFile( const char * xmlFileName );
+    void printFrameIndex2Scratch( cv::Mat scratch, long nowIndx, long lastRef, double time4Jacobian, double time4Iteration, bool cleanScratch  );
     std::string cvMatType2str(int type);
 
 

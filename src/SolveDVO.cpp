@@ -104,10 +104,17 @@ void SolveDVO::imshowEigenImage(const char *winName, Eigen::MatrixXf eim)
 }
 
 /// @brief Load RGBD frame-data (stored) from file. Stored in OpenCV XML
-void SolveDVO::loadFromFile(const char *xmlFileName)
+/// @param[in] xmlFileName : OpenCV XML file to open
+/// @returns false if error loading file. True on success
+bool SolveDVO::loadFromFile(const char *xmlFileName)
 {
     cv::FileStorage fs( xmlFileName, cv::FileStorage::READ );
     ROS_INFO_STREAM( "Loading : "<< xmlFileName );
+    if( fs.isOpened() == false )
+    {
+        ROS_ERROR( "Cannot Open File %s", xmlFileName );
+        return false;
+    }
 
     this->rcvd_framemono.clear();
     this->rcvd_depth.clear();
@@ -134,27 +141,34 @@ void SolveDVO::loadFromFile(const char *xmlFileName)
     }
     isFrameAvailable = true;
 
+    return true;
 }
 
 
 
 /// @brief Prints nowIndex and LastRef index to scratch image. __DEBUG__
 /// @param[in] cleanScratch : false indicate that overwrite board. True indicates that need to clean board
-void SolveDVO::printFrameIndex2Scratch(cv::Mat scratch, long nowIndx, long lastRef, double time4Jacobian, bool cleanScratch=true)
+void SolveDVO::printFrameIndex2Scratch(cv::Mat scratch, long nowIndx, long lastRef, double time4Jacobian, double time4Iteration, bool cleanScratch=true)
 {
     if( cleanScratch )
         scratch = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
 
-    char a[100], b[100], c[100];
+    char a[100], b[100], c[100], d[100];
     sprintf( a, "Now     : %d", nowIndx );
     sprintf( b, "LastRef : %d", lastRef );
-    sprintf( c, "Comp. Time J : %lf ms", time4Jacobian*1000 );
+    sprintf( c, "Jacobian : %lf ms", time4Jacobian*1000 );
+    sprintf( d, "Iterations : %lf ms", time4Iteration*1000 );
     ROS_DEBUG( a );
     ROS_DEBUG( b );
 
     cv::putText( scratch, a, cv::Point(20, 20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
     cv::putText( scratch, b, cv::Point(10, 40), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
-    cv::putText( scratch, c, cv::Point(10, 60), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+
+    cv::putText( scratch, "Computation Time", cv::Point(10, 60), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+
+    cv::putText( scratch, c, cv::Point(10, 80), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+    cv::putText( scratch, d, cv::Point(10, 100), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+
 
 
 }
@@ -305,11 +319,42 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
     Eigen::MatrixXf _ref = im_r[level];
     Eigen::MatrixXf _depth = dim_r[level];
 
+
+#ifdef _JACOBIAN__DISTANCE_TRANSFORM
+        ///// DISTANCE TRANSFORM of _ref
+        ROS_INFO( "^^Distance Transform in Jacobian Computation Enabled");
+        cv::Mat nownow, xnow, dTrn;
+        cv::eigen2cv( _ref, nownow );
+        cv::Sobel( nownow, xnow, CV_8U, 1, 1 );
+        xnow = 255 - xnow;
+        cv::threshold( xnow, xnow, 250, 255, cv::THRESH_BINARY );
+        cv::distanceTransform( xnow, dTrn, CV_DIST_L2, 3 );
+        cv::normalize(dTrn, dTrn, 0.0, 1.0, cv::NORM_MINMAX); //[0,1]
+
+        Eigen::MatrixXf dTranEigen;
+        cv::cv2eigen( dTrn, dTranEigen );
+        dTranEigen *= 255.0f; //scale
+
+        double min, max;
+        cv::minMaxLoc(dTrn, &min, &max);
+        ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(dTrn.type()) );
+
+//        if( level == 0 ) {
+//        cv::imshow("edgeMap", xnow );
+//        cv::imshow("distanceTransform", dTrn );
+//        cv::waitKey(0);
+//        }
+
+        Eigen::MatrixXf dGx, dGy; // gradients of distance-transform
+        imageGradient(dTranEigen, dGx, dGy ); //gradient of distance-transformed
+
+        ///// END DISTANCE TRANSFORM
+#endif
+
+
     // Image gradient computation
-    Eigen::MatrixXf Gx, Gy;
+    Eigen::MatrixXf Gx, Gy; //image gradient
     imageGradient(_ref, Gx, Gy );
-
-
 
 
 
@@ -362,6 +407,11 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
                 G(0) = Gx(yy,xx);
                 G(1) = Gy(yy,xx);
 
+#ifdef _JACOBIAN__DISTANCE_TRANSFORM
+                G(0) = .5*G(0) + .5*dGx(yy,xx); // distance transform components
+                G(1) = .5*G(1) + .5*dGy(yy,xx);
+#endif
+
                 // A1
                 A1(0,0) = scaleFac*fx/Z;
                 A1(0,1) = 0.;
@@ -376,8 +426,6 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
                 to_se_3(X,Y,Z, wx );
                 A2.block<3,3>(0,3) = wx;
 
-
-                ROS_INFO_STREAM_ONCE( "(XYZ) : "<< X<< ","<< Y<< ", "<< Z << "\nA2 :\n"<< A2 );
 
                 Eigen::RowVectorXf J_i = G * A1 * A2;
 
@@ -463,7 +511,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 //        ROS_DEBUG_STREAM( "A=\n["<< A << "]");
 //        ROS_DEBUG_STREAM( "b:\n["<< b << "]");
-        ROS_INFO_STREAM( "psi:\n["<< psi.transpose() << "]");
+        ROS_DEBUG_STREAM( "psi:\n["<< psi.transpose() << "]");
 
 
 
@@ -529,7 +577,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
     ROS_DEBUG_STREAM( "final R :\n"<< cR );
     ROS_DEBUG_STREAM( "final T :\n"<< cT.transpose() );
-    ROS_INFO("End of Gauss-Newton Iterations" );
+    ROS_INFO("-*-*-*-*- End of Gauss-Newton Iterations (level=%d) -*-*-*-*- ", level );
 
 
 }
@@ -618,22 +666,22 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
     JacobianList jacob = _J[level];
 
     Eigen::MatrixXf _now = im_n[level];
-    ///// DISTANCE TRANSFORM of _now
-    ROS_INFO( "distance transform");
-    cv::Mat nownow, xnow, dTrn;
-    cv::eigen2cv( _now, nownow );
-    cv::Sobel( nownow, xnow, CV_8U, 1, 1 );
-    xnow = 255 - xnow;
-    cv::threshold( xnow, xnow, 250, 255, cv::THRESH_BINARY );
-    cv::distanceTransform( xnow, dTrn, CV_DIST_L1, 5 );
-    cv::normalize(dTrn, dTrn, 0.0, 1.0, cv::NORM_MINMAX);
-    cv::imshow("edgeMap", xnow );
-    cv::imshow("distanceTransform", dTrn );
+//    ///// DISTANCE TRANSFORM of _now
+//    ROS_INFO( "distance transform");
+//    cv::Mat nownow, xnow, dTrn;
+//    cv::eigen2cv( _now, nownow );
+//    cv::Sobel( nownow, xnow, CV_8U, 1, 1 );
+//    xnow = 255 - xnow;
+//    cv::threshold( xnow, xnow, 250, 255, cv::THRESH_BINARY );
+//    cv::distanceTransform( xnow, dTrn, CV_DIST_L1, 5 );
+//    cv::normalize(dTrn, dTrn, 0.0, 1.0, cv::NORM_MINMAX);
+//    cv::imshow("edgeMap", xnow );
+//    cv::imshow("distanceTransform", dTrn );
 
-    double min, max;
-    cv::minMaxLoc(dTrn, &min, &max);
-    ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(dTrn.type()) );
-    ///// END DISTANCE TRANSFORM
+//    double min, max;
+//    cv::minMaxLoc(dTrn, &min, &max);
+//    ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(dTrn.type()) );
+//    ///// END DISTANCE TRANSFORM
 
     A = Eigen::MatrixXf::Zero(6,6);
     b = Eigen::VectorXf::Zero(6);
@@ -716,9 +764,12 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
             }
 #endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
 
-            float proximityTerm = 200.0 * dTrn.at<float>(yy,xx);
+//            //distance transform based penalty
+//            float proximityTerm = 200.0 * dTrn.at<float>(yy,xx);
+//            b += (r-proximityTerm)*jacob[i].transpose()*weight;
 
-            b += (r-proximityTerm)*jacob[i].transpose()*weight;
+
+            b += (r)*jacob[i].transpose()*weight;
 
             nPtVisible++;
         }
@@ -1304,10 +1355,13 @@ void SolveDVO::loop()
 
 
         setNowFrame();
-        gaussNewtonIterations(3, 5, cR, cT );
-        gaussNewtonIterations(2, 5, cR, cT );
-        gaussNewtonIterations(1, 5, cR, cT );
-        gaussNewtonIterations(0, 5, cR, cT );
+            ros::Time jstart = ros::Time::now();
+            gaussNewtonIterations(3, 7, cR, cT );
+            gaussNewtonIterations(2, 7, cR, cT );
+            gaussNewtonIterations(1, 7, cR, cT );
+            gaussNewtonIterations(0, 7, cR, cT );
+            ros::Duration jdur = ros::Time::now() - jstart;
+            gaussNewtonIterationsComputeTime = jdur.toSec();
 
 
 
@@ -1329,7 +1383,7 @@ void SolveDVO::loop()
 
             processResidueHistogram( __residues );
 
-            printFrameIndex2Scratch(debugScratchBoard, nFrame, lastRefFrame, lastRefFrameComputeTime, true );
+            printFrameIndex2Scratch(debugScratchBoard, nFrame, lastRefFrame, lastRefFrameComputeTime, gaussNewtonIterationsComputeTime, true );
             cv::imshow( "scratBoard", debugScratchBoard );
 
             //for( i=0 ; i<im_n.size() ; i++ )
@@ -1365,15 +1419,16 @@ void SolveDVO::loop()
 //        ros::console::notifyLoggerLevelsChanged();
 
     char frameFileName[50];
-    const char * folder = "xdump_left2right";
+    const char * folder = "xdump_right2left";
 
-    const int START = 0;
+    const int START = 30;
     const int END = 197;
 
 
     cv::Mat debugScratchBoard = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
     long lastRefFrame=0;
     double lastRefFrameComputeTime;
+    double gaussNewtonIterationsComputeTime;
 
 
 
@@ -1386,7 +1441,11 @@ void SolveDVO::loop()
     {
 
         sprintf( frameFileName, "%s/framemono_%04d.xml", folder, iFrameNum );
-        loadFromFile(frameFileName );
+        bool flag = loadFromFile(frameFileName );
+        if( flag == false ) {
+            ROS_ERROR( "No More files, Quitting..");
+            break;
+        }
 
 
         if( signalGetNewRefImage == true )
@@ -1412,10 +1471,14 @@ void SolveDVO::loop()
         //{
             setNowFrame();
 
+            ros::Time jstart = ros::Time::now();
             gaussNewtonIterations(3, 7, cR, cT );
             gaussNewtonIterations(2, 7, cR, cT );
             gaussNewtonIterations(1, 7, cR, cT );
             gaussNewtonIterations(0, 7, cR, cT );
+            ros::Duration jdur = ros::Time::now() - jstart;
+            gaussNewtonIterationsComputeTime = jdur.toSec();
+
         //}
 
         // Some displaying
@@ -1425,7 +1488,7 @@ void SolveDVO::loop()
                 visualizeReprojectedDepth(im_n[__REPROJECTION_LEVEL], __reprojected_depth);
 
 
-                printFrameIndex2Scratch(debugScratchBoard, iFrameNum, lastRefFrame, lastRefFrameComputeTime, true );
+                printFrameIndex2Scratch(debugScratchBoard, iFrameNum, lastRefFrame, lastRefFrameComputeTime, gaussNewtonIterationsComputeTime, true );
                 cv::imshow( "scratBoard", debugScratchBoard );
 
             cv::Mat outImg;

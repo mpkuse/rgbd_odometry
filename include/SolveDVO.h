@@ -16,6 +16,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <string>
 
 #include <sophus/se3.hpp>
 #include <Eigen/Dense>
@@ -40,6 +41,7 @@
 #define GRAD_NORM( A, B ) fabs(A)
 
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+
 #define __COLLECT_EPSILON_DEBUG__DATA_
 #define _IGNORE__NEAR_PTS_DISPLAY____
 
@@ -122,7 +124,7 @@ private:
     void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3b color);
     int countSelectedPts(Eigen::MatrixXf& Gx, Eigen::MatrixXf& Gy, Eigen::MatrixXi &roi);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
-    void visualizeResidueHistogram( Eigen::VectorXf residi );
+    void processResidueHistogram( Eigen::VectorXf residi, bool quite );
     void visualizeResidueHeatMap( Eigen::MatrixXf eim, Eigen::MatrixXf residueAt );
     void visualizeReprojectedDepth( Eigen::MatrixXf eim, Eigen::MatrixXf reprojDepth );
 
@@ -141,6 +143,9 @@ private:
     void imshowEigenImage(const char *winName, Eigen::MatrixXd eim);
     void imshowEigenImage(const char *winName, Eigen::MatrixXf eim);
     void loadFromFile( const char * xmlFileName );
+    void printFrameIndex2Scratch( cv::Mat scratch, long nowIndx, long lastRef, double time4Jacobian, bool cleanScratch  );
+    std::string cvMatType2str(int type);
+
 
 
     //

@@ -12,8 +12,8 @@
 
 
 //#define __ENABLE_IM_WRITE__ //will also write a raw-video file
-#define __ENABLE_VIDEO_WRITE__ //default is yuv
-#define __FMT_Y4M__
+//#define __ENABLE_VIDEO_WRITE__ //default is yuv
+//#define __FMT_Y4M__
 
 
 

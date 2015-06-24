@@ -103,6 +103,7 @@ void SolveDVO::imshowEigenImage(const char *winName, Eigen::MatrixXf eim)
     cv::imshow(winName, tmpuint );
 }
 
+/// @brief Load RGBD frame-data (stored) from file. Stored in OpenCV XML
 void SolveDVO::loadFromFile(const char *xmlFileName)
 {
     cv::FileStorage fs( xmlFileName, cv::FileStorage::READ );
@@ -133,6 +134,53 @@ void SolveDVO::loadFromFile(const char *xmlFileName)
     }
     isFrameAvailable = true;
 
+}
+
+
+
+/// @brief Prints nowIndex and LastRef index to scratch image. __DEBUG__
+/// @param[in] cleanScratch : false indicate that overwrite board. True indicates that need to clean board
+void SolveDVO::printFrameIndex2Scratch(cv::Mat scratch, long nowIndx, long lastRef, double time4Jacobian, bool cleanScratch=true)
+{
+    if( cleanScratch )
+        scratch = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
+
+    char a[100], b[100], c[100];
+    sprintf( a, "Now     : %d", nowIndx );
+    sprintf( b, "LastRef : %d", lastRef );
+    sprintf( c, "Comp. Time J : %lf ms", time4Jacobian*1000 );
+    ROS_DEBUG( a );
+    ROS_DEBUG( b );
+
+    cv::putText( scratch, a, cv::Point(20, 20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+    cv::putText( scratch, b, cv::Point(10, 40), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+    cv::putText( scratch, c, cv::Point(10, 60), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
+
+
+}
+
+std::string SolveDVO::cvMatType2str(int type)
+{
+    std::string r;
+
+    uchar depth = type & CV_MAT_DEPTH_MASK;
+    uchar chans = 1 + (type >> CV_CN_SHIFT);
+
+    switch ( depth ) {
+      case CV_8U:  r = "8U"; break;
+      case CV_8S:  r = "8S"; break;
+      case CV_16U: r = "16U"; break;
+      case CV_16S: r = "16S"; break;
+      case CV_32S: r = "32S"; break;
+      case CV_32F: r = "32F"; break;
+      case CV_64F: r = "64F"; break;
+      default:     r = "User"; break;
+    }
+
+    r += "C";
+    r += (chans+'0');
+
+    return r;
 }
 
 
@@ -461,7 +509,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         if( level == __REPROJECTION_LEVEL )
         {
-            visualizeResidueHistogram( __residues );
+            processResidueHistogram( __residues, false );
             visualizeResidueHeatMap(im_n[__REPROJECTION_LEVEL], __now_roi_reproj_values );
             visualizeReprojectedDepth(im_n[__REPROJECTION_LEVEL], __reprojected_depth);
 
@@ -570,6 +618,22 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
     JacobianList jacob = _J[level];
 
     Eigen::MatrixXf _now = im_n[level];
+    ///// DISTANCE TRANSFORM of _now
+    ROS_INFO( "distance transform");
+    cv::Mat nownow, xnow, dTrn;
+    cv::eigen2cv( _now, nownow );
+    cv::Sobel( nownow, xnow, CV_8U, 1, 1 );
+    xnow = 255 - xnow;
+    cv::threshold( xnow, xnow, 250, 255, cv::THRESH_BINARY );
+    cv::distanceTransform( xnow, dTrn, CV_DIST_L1, 5 );
+    cv::normalize(dTrn, dTrn, 0.0, 1.0, cv::NORM_MINMAX);
+    cv::imshow("edgeMap", xnow );
+    cv::imshow("distanceTransform", dTrn );
+
+    double min, max;
+    cv::minMaxLoc(dTrn, &min, &max);
+    ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(dTrn.type()) );
+    ///// END DISTANCE TRANSFORM
 
     A = Eigen::MatrixXf::Zero(6,6);
     b = Eigen::VectorXf::Zero(6);
@@ -652,7 +716,9 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
             }
 #endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
 
-            b += r*jacob[i].transpose()*weight;
+            float proximityTerm = 200.0 * dTrn.at<float>(yy,xx);
+
+            b += (r-proximityTerm)*jacob[i].transpose()*weight;
 
             nPtVisible++;
         }
@@ -675,11 +741,18 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
 
     ROS_INFO( "Cummulative squared residue : %f", cumm_r );
 
+
+
+
+
+
     return (  (float)nPtVisible /  (float)pts3d_un_normalized.cols() );
 //    if( nPtVisible < 50 )
 //        return false;
 //    else
 //        return true;
+
+
 
 
 }
@@ -894,8 +967,9 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
 
 /// @brief Compute and visualize histogram of the residues
 /// @param[in] residi : Residue at pixel location. Nx1
+/// @param[in] quite : `true` will suppress the display. By default the display is off
 /// @note : This is customized to show integer valued bins only. 0 to 200 on x-axis. 0 to 2500 on y-axis
-void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
+void SolveDVO::processResidueHistogram(Eigen::VectorXf residi, bool quite=true)
 {
     // computation of histogram
     Eigen::VectorXf histogram = Eigen::VectorXf::Zero(260);
@@ -908,15 +982,19 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
     histogram /= residi.rows(); //normalized the histogram, now histogram \in [0,1]
 
 
-    cv::Mat histPlot = cv::Mat::zeros( 500, 450, CV_8UC3 ) + cv::Scalar(255,255,255);
-    //red-dots on vertical
-    cv::line(histPlot, cv::Point(1,histPlot.rows-1), cv::Point(1,0), cv::Scalar(0,0,0) );
-    for( float mag = 0 ; mag< .3f ; mag+=0.02f )
+    cv::Mat histPlot;
+    if( quite == false )
     {
-        cv::circle(histPlot, cv::Point(1,histPlot.rows-20-int(mag*2000.0)),  2, cv::Scalar(0,0,255), -1);
-        char toS[20];
-        sprintf( toS, "%.2f", mag );
-        cv::putText( histPlot, toS, cv::Point(10,histPlot.rows-20-int(mag*2000.0)), cv::FONT_HERSHEY_COMPLEX_SMALL, .7, cv::Scalar(0,0,0) );
+        histPlot = cv::Mat::zeros( 500, 450, CV_8UC3 ) + cv::Scalar(255,255,255);
+        //red-dots on vertical
+        cv::line(histPlot, cv::Point(1,histPlot.rows-1), cv::Point(1,0), cv::Scalar(0,0,0) );
+        for( float mag = 0 ; mag< .3f ; mag+=0.02f )
+        {
+            cv::circle(histPlot, cv::Point(1,histPlot.rows-20-int(mag*2000.0)),  2, cv::Scalar(0,0,255), -1);
+            char toS[20];
+            sprintf( toS, "%.2f", mag );
+            cv::putText( histPlot, toS, cv::Point(10,histPlot.rows-20-int(mag*2000.0)), cv::FONT_HERSHEY_COMPLEX_SMALL, .7, cv::Scalar(0,0,0) );
+        }
     }
 
 
@@ -924,25 +1002,28 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
 //    sprintf( tmpS, "%f", histogram(i) );
 //    cv::putText(histPlot, tmpS, cv::Point(250,20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
 
-    // histogram bars draw
-    for(int i = 0; i < 256; i++)
+    if( quite == false )
     {
-        float mag = histogram(i);
-        cv::line(histPlot,cv::Point(2*i,histPlot.rows-20),cv::Point(2*i,histPlot.rows-20-int(mag*2000.0)),cv::Scalar(255,0,0));
-        if( (2*(i-1))%50 == 0 )
+        // histogram bars draw
+        for(int i = 0; i < 256; i++)
         {
-            cv::circle( histPlot, cv::Point(2*i,histPlot.rows-20), 2, cv::Scalar(0,0,255), -1 );
-            char toS[20];
-            sprintf( toS, "%d", i-1 );
+            float mag = histogram(i);
+            cv::line(histPlot,cv::Point(2*i,histPlot.rows-20),cv::Point(2*i,histPlot.rows-20-int(mag*2000.0)),cv::Scalar(255,0,0));
+            if( (2*(i-1))%50 == 0 )
+            {
+                cv::circle( histPlot, cv::Point(2*i,histPlot.rows-20), 2, cv::Scalar(0,0,255), -1 );
+                char toS[20];
+                sprintf( toS, "%d", i-1 );
 
-            cv::putText( histPlot, toS,cv::Point(2*i,histPlot.rows-5), cv::FONT_HERSHEY_COMPLEX_SMALL, .7, cv::Scalar(0,0,0) );
+                cv::putText( histPlot, toS,cv::Point(2*i,histPlot.rows-5), cv::FONT_HERSHEY_COMPLEX_SMALL, .7, cv::Scalar(0,0,0) );
+            }
         }
     }
 
 
 
-    //plot laplacian distribution with [0, b_cap]
-    float b_cap=0; //MLE of laplacian distribution parameters
+    //MLE of laplacian distribution parameters
+    float b_cap=0;
     for( int i=0 ; i<residi.rows() ; i++ )
     {
         histogram( (int)residi(i) + 1 )++;
@@ -953,20 +1034,23 @@ void SolveDVO::visualizeResidueHistogram(Eigen::VectorXf residi)
         signalGetNewRefImage = true;
 
 
-
-    char toS[100];
-    sprintf( toS, "Laplacian Distribution MLE Estimate\nb_cap : %.3f", b_cap );
-    cv::putText(histPlot, toS, cv::Point(40,20), cv::FONT_HERSHEY_COMPLEX_SMALL, .5, cv::Scalar(0,0,0) );
-    // Plot the estimated laplacian distribution
-    for( int i=1 ; i<256 ; i++ )
+    if( quite == false )
     {
-        float mag = 1/(2*b_cap) * exp( -(i-1)/b_cap );
-        cv::circle(histPlot, cv::Point(2*i,histPlot.rows-20-mag*2000.), 2, cv::Scalar(255,255,0), -1 );
+        char toS[100];
+        //plot laplacian distribution with [0, b_cap]
+        sprintf( toS, "Laplacian Distribution MLE Estimate\nb_cap : %.3f", b_cap );
+        cv::putText(histPlot, toS, cv::Point(40,20), cv::FONT_HERSHEY_COMPLEX_SMALL, .5, cv::Scalar(0,0,0) );
+        // Plot the estimated laplacian distribution
+        for( int i=1 ; i<256 ; i++ )
+        {
+            float mag = 1/(2*b_cap) * exp( -(i-1)/b_cap );
+            cv::circle(histPlot, cv::Point(2*i,histPlot.rows-20-mag*2000.), 2, cv::Scalar(255,255,0), -1 );
+        }
+
+
+
+        cv::imshow( "PDF of residues", histPlot );
     }
-
-
-
-    cv::imshow( "PDF of residues", histPlot );
 }
 
 void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf residueAt)
@@ -1165,9 +1249,15 @@ void SolveDVO::visualizeReprojectedDepth(Eigen::MatrixXf eim, Eigen::MatrixXf re
 /// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
 void SolveDVO::loop()
 {
+
 /*
     ros::Rate rate(30);
     long nFrame=0;
+    long lastRefFrame=0;
+    double lastRefFrameComputeTime;
+    cv::Mat debugScratchBoard = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
+
+
     // Pose of now frame wrt currently set reference frame
     Eigen::Matrix3f cR = Eigen::Matrix3f::Identity();
     Eigen::Vector3f cT = Eigen::Vector3f::Zero();
@@ -1192,8 +1282,16 @@ void SolveDVO::loop()
         //if( (nFrame % 9000000) == 0 )
         if( signalGetNewRefImage == true )
         {
+            lastRefFrame = nFrame;
             setRefFrame();
+
+
+            ros::Time jstart = ros::Time::now();
             computeJacobian();
+            ros::Duration jdur = ros::Time::now() - jstart;
+            lastRefFrameComputeTime = jdur.toSec();
+
+
             keyR = nR;
             keyT = nT;
             cR = Eigen::Matrix3f::Identity();
@@ -1228,6 +1326,12 @@ void SolveDVO::loop()
         //Debugging display of re-projected points
         {
             int i = 0;
+
+            processResidueHistogram( __residues );
+
+            printFrameIndex2Scratch(debugScratchBoard, nFrame, lastRefFrame, lastRefFrameComputeTime, true );
+            cv::imshow( "scratBoard", debugScratchBoard );
+
             //for( i=0 ; i<im_n.size() ; i++ )
 //            {
 //                char nowName[100], refName[100];
@@ -1243,14 +1347,16 @@ void SolveDVO::loop()
         sOverlay(im_r[__REPROJECTION_LEVEL], _roi[__REPROJECTION_LEVEL], outImg2, cv::Vec3b(0,0,255) );
         cv::imshow( "markers on the ref-frame", outImg2);
         cv::moveWindow("reprojected markers onto now-drame", 0, 400 );
+
+
         cv::waitKey(3);
         }
 
         rate.sleep();
         nFrame++;
     }
-
 */
+
 
 
 
@@ -1259,9 +1365,16 @@ void SolveDVO::loop()
 //        ros::console::notifyLoggerLevelsChanged();
 
     char frameFileName[50];
-    const char * folder = "xdump_right2left";
-    int iFrameNum = 0;
+    const char * folder = "xdump_left2right";
+
+    const int START = 0;
     const int END = 197;
+
+
+    cv::Mat debugScratchBoard = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
+    long lastRefFrame=0;
+    double lastRefFrameComputeTime;
+
 
 
     Eigen::Matrix3f cR = Eigen::Matrix3f::Identity();
@@ -1269,7 +1382,7 @@ void SolveDVO::loop()
 
 
 
-    for( iFrameNum=iFrameNum+1 ; iFrameNum < END ; iFrameNum++ )
+    for( int iFrameNum = START; iFrameNum < END ; iFrameNum++ )
     {
 
         sprintf( frameFileName, "%s/framemono_%04d.xml", folder, iFrameNum );
@@ -1278,12 +1391,19 @@ void SolveDVO::loop()
 
         if( signalGetNewRefImage == true )
         {
+            lastRefFrame = iFrameNum;
             setRefFrame();
 
             cR = Eigen::Matrix3f::Identity();
             cT = Eigen::Vector3f::Zero();
 
+
+            ros::Time jstart = ros::Time::now();
             computeJacobian();
+            ros::Duration jdur = ros::Time::now() - jstart;
+            lastRefFrameComputeTime = jdur.toSec();
+
+
 
             signalGetNewRefImage = false;
 
@@ -1300,9 +1420,13 @@ void SolveDVO::loop()
 
         // Some displaying
         {
-                visualizeResidueHistogram( __residues );
+                processResidueHistogram( __residues, false );
                 visualizeResidueHeatMap(im_n[__REPROJECTION_LEVEL], __now_roi_reproj_values );
                 visualizeReprojectedDepth(im_n[__REPROJECTION_LEVEL], __reprojected_depth);
+
+
+                printFrameIndex2Scratch(debugScratchBoard, iFrameNum, lastRefFrame, lastRefFrameComputeTime, true );
+                cv::imshow( "scratBoard", debugScratchBoard );
 
             cv::Mat outImg;
             sOverlay(im_n[__REPROJECTION_LEVEL], __now_roi_reproj, outImg, cv::Vec3b(0,255,0) );

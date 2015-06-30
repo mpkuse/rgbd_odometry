@@ -9,6 +9,7 @@ SolveDVO::SolveDVO()
     isRefFrameAvailable = false;
     isNowFrameAvailable = false;
     isJacobianComputed = false;
+    isRefDistTransfrmAvailable = false;
 
     signalGetNewRefImage = true;
 
@@ -259,6 +260,10 @@ void SolveDVO::setRefFrame()
     dim_r = rcvd_depth;
     isRefFrameAvailable = true;
     isJacobianComputed = false;
+
+
+    computeDistTransfrmOfRef();
+
 }
 
 
@@ -406,11 +411,6 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
                 // G
                 G(0) = Gx(yy,xx);
                 G(1) = Gy(yy,xx);
-
-#ifdef _JACOBIAN__DISTANCE_TRANSFORM
-                G(0) = .5*G(0) + .5*dGx(yy,xx); // distance transform components
-                G(1) = .5*G(1) + .5*dGy(yy,xx);
-#endif
 
                 // A1
                 A1(0,0) = scaleFac*fx/Z;
@@ -1296,6 +1296,45 @@ void SolveDVO::visualizeReprojectedDepth(Eigen::MatrixXf eim, Eigen::MatrixXf re
 }
 
 
+/// @brief Computes the distance transform of the reference frame (all levels) and stores in std::vector
+void SolveDVO::computeDistTransfrmOfRef()
+{
+    assert( isRefFrameAvailable && "Reference frames need to be available in order to compute dist transform on them" );
+
+    ref_distance_transform.clear();
+
+
+    //for each level
+    for( int lvl=0 ; lvl<im_r.size() ; lvl++ )
+    {
+        Eigen::MatrixXf ref_t = im_r[lvl];
+        ///// DISTANCE TRANSFORM of ref_t
+        ROS_INFO( "distance transform (level=%d)", lvl );
+        cv::Mat refCvMat, refEdge, refDistTransCvMat;
+        cv::eigen2cv( ref_t, refCvMat );
+        cv::Sobel( refCvMat, refEdge, CV_8U, 1, 1 );
+        refEdge = 255 - refEdge;
+        cv::threshold( refEdge, refEdge, 250, 255, cv::THRESH_BINARY );
+        cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L1, 5 );
+        cv::normalize(refDistTransCvMat, refDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
+
+        double min, max;
+        cv::minMaxLoc(refDistTransCvMat, &min, &max);
+        ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(refDistTransCvMat.type()) );
+        ///// END DISTANCE TRANSFORM
+
+        Eigen::MatrixXf refDistTrans;
+        Eigen::MatrixXi refEdgeMap;
+        cv::cv2eigen(refDistTransCvMat, refDistTrans);
+        refEdge = 255 - refEdge; //done for visualization
+        cv::cv2eigen(refEdge, refEdgeMap);
+
+        ref_distance_transform.push_back(refDistTrans);
+        ref_edge_map.push_back(refEdgeMap);
+    }
+}
+
+
 /// @brief The event loop. Basically an ever running while with ros::spinOnce()
 /// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
 void SolveDVO::loop()
@@ -1490,6 +1529,17 @@ void SolveDVO::loop()
 
                 printFrameIndex2Scratch(debugScratchBoard, iFrameNum, lastRefFrame, lastRefFrameComputeTime, gaussNewtonIterationsComputeTime, true );
                 cv::imshow( "scratBoard", debugScratchBoard );
+
+                // Distance transform related shows
+                //imshowEigenImage( "refDistT", ref_distance_transform[__REPROJECTION_LEVEL]);
+                //imshowEigenImage("refEdges", ref_edge_map[__REPROJECTION_LEVEL]);
+                cv::Mat outDistVis;
+                sOverlay(ref_distance_transform[__REPROJECTION_LEVEL], ref_edge_map[__REPROJECTION_LEVEL], outDistVis, cv::Vec3b(255,255,0));
+                cv::imshow("distance-trans & edges overlay", outDistVis);
+
+
+                // End distance transform related
+
 
             cv::Mat outImg;
             sOverlay(im_n[__REPROJECTION_LEVEL], __now_roi_reproj, outImg, cv::Vec3b(0,255,0) );

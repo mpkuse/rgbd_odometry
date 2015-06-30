@@ -48,8 +48,6 @@
 
 #define __REPROJECTION_LEVEL 0
 
-#define _JACOBIAN__DISTANCE_TRANSFORM
-
 
 
 typedef std::vector<Eigen::RowVectorXf> JacobianList;
@@ -139,6 +137,11 @@ private:
     Eigen::MatrixXf __reprojected_depth; //mask of float values denoting depth values (in mm) in now frames
 
 
+    // distance transform related
+    bool isRefDistTransfrmAvailable;
+    std::vector<Eigen::MatrixXf> ref_distance_transform;
+    std::vector<Eigen::MatrixXi> ref_edge_map;
+    void computeDistTransfrmOfRef();
 
 
     //

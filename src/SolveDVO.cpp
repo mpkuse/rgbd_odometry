@@ -785,7 +785,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
 /// where, sigma^2 = 1/n \sum_i r^2 6/ ( 5 + r/sigma )^2 ....iterative
 float SolveDVO::getWeightOf( float r)
 {
-    return 5.0 / (6.0 + r*r/9 );
+    return 3.0 / (6.0 + r*r/9 );
 }
 
 
@@ -1342,9 +1342,16 @@ void SolveDVO::computeDistTransfrmOfRef()
         ROS_INFO( "distance transform (level=%d)", lvl );
         cv::Mat refCvMat, refEdge, refDistTransCvMat;
         cv::eigen2cv( ref_t, refCvMat );
-        cv::Sobel( refCvMat, refEdge, CV_8U, 1, 1 );
+        // Sobel
+//        cv::Sobel( refCvMat, refEdge, CV_8U, 1, 1 );
+//        refEdge = 255 - refEdge;
+//        cv::threshold( refEdge, refEdge, 250, 255, cv::THRESH_BINARY );
+
+        // Canny
+        refCvMat.convertTo(refCvMat, CV_8U);
+        cv::Canny( refCvMat, refEdge, 250, 50 );
         refEdge = 255 - refEdge;
-        cv::threshold( refEdge, refEdge, 250, 255, cv::THRESH_BINARY );
+
         cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L1, 5 );
         cv::normalize(refDistTransCvMat, refDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
 
@@ -1383,9 +1390,17 @@ void SolveDVO::computeDistTransfrmOfNow()
         ROS_INFO( "distance transform (level=%d)", lvl );
         cv::Mat nowCvMat, nowEdge, nowDistTransCvMat;
         cv::eigen2cv( now_t, nowCvMat );
-        cv::Sobel( nowCvMat, nowEdge, CV_8U, 1, 1 );
+
+        // Sobel
+//        cv::Sobel( nowCvMat, nowEdge, CV_8U, 1, 1 );
+//        nowEdge = 255 - nowEdge;
+//        cv::threshold( nowEdge, nowEdge, 250, 255, cv::THRESH_BINARY );
+
+        // Canny
+        nowCvMat.convertTo(nowCvMat, CV_8U);
+        cv::Canny( nowCvMat, nowEdge, 250, 50 );
         nowEdge = 255 - nowEdge;
-        cv::threshold( nowEdge, nowEdge, 250, 255, cv::THRESH_BINARY );
+
         cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L1, 5 );
         cv::normalize(nowDistTransCvMat, nowDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
 

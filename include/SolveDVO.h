@@ -49,6 +49,9 @@
 #define __REPROJECTION_LEVEL 0
 
 
+#define __COMPUTE_GEOMETRIC_ERRORS
+
+
 
 typedef std::vector<Eigen::RowVectorXf> JacobianList;
 typedef Eigen::MatrixXf ImCordList;  //2xN

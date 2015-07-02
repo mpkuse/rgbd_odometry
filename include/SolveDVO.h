@@ -37,8 +37,8 @@
 
 
 
-//#define GRAD_NORM( A, B ) fabs(A) + fabs(B)
-#define GRAD_NORM( A, B ) fabs(A)
+#define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
+//#define GRAD_NORM( A, B ) fabs(A)
 
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 
@@ -113,7 +113,10 @@ private:
     void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT );
     float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
+
     float getWeightOf( float r );
+    int selectedPts(Eigen::MatrixXf& Gx, Eigen::MatrixXf& Gy, Eigen::MatrixXi &roi);
+
     bool signalGetNewRefImage;
 
 
@@ -123,7 +126,6 @@ private:
     void to_se_3(float w0, float w1, float w2, Eigen::Matrix3f& wx);
     void exponentialMap(Eigen::VectorXf &psi, Eigen::Matrix3f &outR, Eigen::Vector3f &outT);
     void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3b color);
-    int countSelectedPts(Eigen::MatrixXf& Gx, Eigen::MatrixXf& Gy, Eigen::MatrixXi &roi);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
     void processResidueHistogram( Eigen::VectorXf residi, bool quite );
     void visualizeResidueHeatMap( Eigen::MatrixXf eim, Eigen::MatrixXf residueAt );
@@ -135,6 +137,7 @@ private:
     Eigen::VectorXf __residues;       //list of residue values, -1 ==> this pixel is not visible in reprojected frame
     Eigen::MatrixXf __now_roi_reproj_values; //this is a mask with float values (= residues at that point)
     Eigen::MatrixXf __reprojected_depth; //mask of float values denoting depth values (in mm) in now frames
+    Eigen::MatrixXf __weights;
 
 
     // distance transform related
@@ -142,6 +145,12 @@ private:
     std::vector<Eigen::MatrixXf> ref_distance_transform;
     std::vector<Eigen::MatrixXi> ref_edge_map;
     void computeDistTransfrmOfRef();
+
+    bool isNowDistTransfrmAvailable;
+    std::vector<Eigen::MatrixXf> now_distance_transform;
+    std::vector<Eigen::MatrixXi> now_edge_map;
+    void computeDistTransfrmOfNow();
+
 
 
     //

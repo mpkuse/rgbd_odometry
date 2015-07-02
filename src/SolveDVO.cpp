@@ -16,10 +16,10 @@ SolveDVO::SolveDVO()
 
     //
     // Setting up some global constants
-    grad_thresh = 3;
+    grad_thresh = 6;
     rviz_frame_id = "denseVO";
-    ratio_of_visible_pts_thresh = 0.45;
-    laplacianThreshExitCond = 20.0f;
+    ratio_of_visible_pts_thresh = 0.5;
+    laplacianThreshExitCond = 15.0f;
 
 
 
@@ -277,6 +277,8 @@ void SolveDVO::setNowFrame()
     im_n = rcvd_framemono;
     dim_n = rcvd_depth;
     isNowFrameAvailable = true;
+
+    computeDistTransfrmOfNow();
 }
 
 
@@ -325,37 +327,6 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
     Eigen::MatrixXf _depth = dim_r[level];
 
 
-#ifdef _JACOBIAN__DISTANCE_TRANSFORM
-        ///// DISTANCE TRANSFORM of _ref
-        ROS_INFO( "^^Distance Transform in Jacobian Computation Enabled");
-        cv::Mat nownow, xnow, dTrn;
-        cv::eigen2cv( _ref, nownow );
-        cv::Sobel( nownow, xnow, CV_8U, 1, 1 );
-        xnow = 255 - xnow;
-        cv::threshold( xnow, xnow, 250, 255, cv::THRESH_BINARY );
-        cv::distanceTransform( xnow, dTrn, CV_DIST_L2, 3 );
-        cv::normalize(dTrn, dTrn, 0.0, 1.0, cv::NORM_MINMAX); //[0,1]
-
-        Eigen::MatrixXf dTranEigen;
-        cv::cv2eigen( dTrn, dTranEigen );
-        dTranEigen *= 255.0f; //scale
-
-        double min, max;
-        cv::minMaxLoc(dTrn, &min, &max);
-        ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(dTrn.type()) );
-
-//        if( level == 0 ) {
-//        cv::imshow("edgeMap", xnow );
-//        cv::imshow("distanceTransform", dTrn );
-//        cv::waitKey(0);
-//        }
-
-        Eigen::MatrixXf dGx, dGy; // gradients of distance-transform
-        imageGradient(dTranEigen, dGx, dGy ); //gradient of distance-transformed
-
-        ///// END DISTANCE TRANSFORM
-#endif
-
 
     // Image gradient computation
     Eigen::MatrixXf Gx, Gy; //image gradient
@@ -363,7 +334,7 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
 
 
 
-    int nGoodPts = countSelectedPts(Gx, Gy, refROI);
+    int nGoodPts = selectedPts(Gx, Gy, refROI);
     ROS_INFO( "# Good Points : %d", nGoodPts );
 
     ROS_WARN_COND( (nGoodPts<50), "[computeJacobian] Too few interesting points to compute Jacobian at");
@@ -403,8 +374,6 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
                 float X = Z * (xx-tmpcx) * tmpfx;
                 float Y = Z * (yy-tmpcy) * tmpfy;
 
-                float resduceFac = 1.0;
-                X /= resduceFac; Y/=resduceFac; Z/=resduceFac;
 
 
                 // compute Jacobian
@@ -432,9 +401,9 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
 
 
                 // register 3d pts, im intensity, im cords, Jacobian (at this interesting pt) in the frame-of-ref of the reference frame
-                spC(0,nPtCount) = resduceFac*X;
-                spC(1,nPtCount) = resduceFac*Y;
-                spC(2,nPtCount) = resduceFac*Z;
+                spC(0,nPtCount) = X;
+                spC(1,nPtCount) = Y;
+                spC(2,nPtCount) = Z;
 
                 //intensity.push_back( _ref(yy,xx) );
                 intensity(nPtCount) = _ref(yy,xx);
@@ -700,6 +669,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
         __residues = -Eigen::VectorXf::Ones( pts3d_ref.cols() ); // init to -1
         __now_roi_reproj_values = -Eigen::MatrixXf::Ones(_now.rows(), _now.cols()); //init to -1
         __reprojected_depth = -Eigen::MatrixXf::Ones( _now.rows(), _now.cols() );
+        __weights = -Eigen::MatrixXf::Ones(_now.rows(), _now.cols()); //init to -1
 
     }
 #endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -740,7 +710,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
             r = grays_ref(i) - _now(yy,xx);
 
             float weight = getWeightOf( r );
-            if( pts3d_ref(2,i) < 100.0f ) // if the Z of a point is small ignore that point. Smaller Z (usually less than 400) are inaccurate
+            if( pts3d_ref(2,i) < 10.0f ) // if the Z of a point is small ignore that point. Smaller Z (usually less than 400) are inaccurate
                 weight = 0.0;
 
 
@@ -759,6 +729,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
                     __now_roi_reproj_values(yy,xx) = (r>0)?r:-r;  // ===> absolute value of r
                     __residues(i) = (r>0)?r:-r;
                     __reprojected_depth(yy,xx) = pts3d_n_copy(2, i );
+                    __weights(yy,xx) = weight;
                 }
 
             }
@@ -814,7 +785,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
 /// where, sigma^2 = 1/n \sum_i r^2 6/ ( 5 + r/sigma )^2 ....iterative
 float SolveDVO::getWeightOf( float r)
 {
-    return 6.0 / (5.0 + r*r/9 );
+    return 5.0 / (6.0 + r*r/9 );
 }
 
 
@@ -982,25 +953,50 @@ void SolveDVO::sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat& xim
 
 }
 
-int SolveDVO::countSelectedPts(Eigen::MatrixXf &Gx, Eigen::MatrixXf &Gy, Eigen::MatrixXi& roi)
+/// @brief Makes a map of selected point.
+/// Given the Gx, Gy (Gradients), selects the interest points based on im grad.
+int SolveDVO::selectedPts(Eigen::MatrixXf &Gx, Eigen::MatrixXf &Gy, Eigen::MatrixXi& roi)
 {
+
     int count=0;
     assert( Gx.rows()>0 && Gy.rows() > 0 );
     assert( (Gx.rows() == Gy.rows())  &&  (Gx.cols() == Gy.cols()) );
 
     roi = Eigen::MatrixXi::Zero(Gx.rows(), Gx.cols());
-    for( int xx=0 ; xx<Gx.cols() ; xx++ )
+    for( int xx=0 ; xx<Gx.cols() ; xx+=2 )
     {
-        for( int yy=0 ; yy<Gx.rows() ; yy++ )
+        for( int yy=0 ; yy<Gx.rows() ; yy+=2 )
         {
-            if(   GRAD_NORM( Gx(yy,xx), Gy(yy,xx) ) >  grad_thresh   )
+            //if(   GRAD_NORM( Gx(yy,xx), Gy(yy,xx) ) >  grad_thresh   )
             {
                 count++;
                 roi(yy,xx) = 1;
             }
         }
     }
-    return count;
+
+
+/*
+    // getting rid of isolated points
+    Eigen::MatrixXf roif = roi.cast<float>();
+
+    cv::Mat roiCvMat;
+    cv::eigen2cv(roif, roiCvMat);
+    //cv::Mat element = cv::getStructuringElement( 0, cv::Size( 1, 1 ), cv::Point( 0, 0 ) );
+    cv::Mat element = cv::getStructuringElement( cv::MORPH_RECT, cv::Size(3, 3), cv::Point(1,1));
+    cv::morphologyEx(roiCvMat, roiCvMat, cv::MORPH_GRADIENT, element );
+    cv::cv2eigen(roiCvMat, roif);
+
+    roi = roif.cast<int>();
+
+
+    roif *= 255.0f;
+    imshowEigenImage( "__DEBUG_countSelectedPts", roif );
+    cv::waitKey(0);
+*/
+
+
+    return roi.sum();
 }
 
 void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * msg )
@@ -1123,42 +1119,74 @@ void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf resi
 
     // make colors
     std::vector<cv::Vec3b> colors;
-    colors.reserve(32);
+    colors.reserve(64);
 
 // defining 32 colors
     {
-        colors[0   ] = cv::Vec3b( 159     ,0     ,0 );
-        colors[1   ] = cv::Vec3b( 191     ,0     ,0 );
-        colors[2   ] = cv::Vec3b( 223     ,0     ,0 );
-        colors[3   ] = cv::Vec3b( 255     ,0     ,0 );
-        colors[4   ] = cv::Vec3b( 255    ,31     ,0 );
-        colors[5   ] = cv::Vec3b( 255    ,63     ,0 );
-        colors[6   ] = cv::Vec3b( 255    ,95     ,0 );
-        colors[7   ] = cv::Vec3b( 255   ,127     ,0 );
-        colors[8   ] = cv::Vec3b( 255   ,159     ,0 );
-        colors[9   ] = cv::Vec3b( 255   ,191     ,0 );
-        colors[10   ] = cv::Vec3b( 255   ,223     ,0 );
-        colors[11   ] = cv::Vec3b( 255   ,255     ,0 );
-        colors[12   ] = cv::Vec3b( 223   ,255    ,31 );
-        colors[13   ] = cv::Vec3b( 191   ,255    ,63 );
-        colors[14   ] = cv::Vec3b( 159   ,255    ,95 );
-        colors[15   ] = cv::Vec3b( 127   ,255   ,127 );
-        colors[16    ] = cv::Vec3b( 95   ,255   ,159 );
-        colors[17    ] = cv::Vec3b( 63   ,255   ,191 );
-        colors[18    ] = cv::Vec3b( 31   ,255   ,223 );
-        colors[19     ] = cv::Vec3b( 0   ,255   ,255 );
-        colors[20     ] = cv::Vec3b( 0   ,223   ,255 );
-        colors[21     ] = cv::Vec3b( 0   ,191   ,255 );
-        colors[22     ] = cv::Vec3b( 0   ,159   ,255 );
-        colors[23     ] = cv::Vec3b( 0   ,127   ,255 );
-        colors[24     ] = cv::Vec3b( 0    ,95   ,255 );
-        colors[25     ] = cv::Vec3b( 0    ,63   ,255 );
-        colors[26     ] = cv::Vec3b( 0    ,31   ,255 );
-        colors[27     ] = cv::Vec3b( 0     ,0   ,255 );
-        colors[28     ] = cv::Vec3b( 0     ,0   ,223 );
-        colors[29     ] = cv::Vec3b( 0     ,0   ,191 );
-        colors[30     ] = cv::Vec3b( 0     ,0   ,159 );
-        colors[31     ] = cv::Vec3b( 0     ,0   ,127 );
+        colors[0   ] = cv::Vec3b( 143     ,0     ,0 );
+        colors[1   ] = cv::Vec3b( 159     ,0     ,0 );
+        colors[2   ] = cv::Vec3b( 175     ,0     ,0 );
+        colors[3   ] = cv::Vec3b( 191     ,0     ,0 );
+        colors[4   ] = cv::Vec3b( 207     ,0     ,0 );
+        colors[5   ] = cv::Vec3b( 223     ,0     ,0 );
+        colors[6   ] = cv::Vec3b( 239     ,0     ,0 );
+        colors[7   ] = cv::Vec3b( 255     ,0     ,0 );
+        colors[8   ] = cv::Vec3b( 255    ,15     ,0 );
+        colors[9   ] = cv::Vec3b( 255    ,31     ,0 );
+       colors[10   ] = cv::Vec3b( 255    ,47     ,0 );
+       colors[11   ] = cv::Vec3b( 255    ,63     ,0 );
+       colors[12   ] = cv::Vec3b( 255    ,79     ,0 );
+       colors[13   ] = cv::Vec3b( 255    ,95     ,0 );
+       colors[14   ] = cv::Vec3b( 255   ,111     ,0 );
+       colors[15   ] = cv::Vec3b( 255   ,127     ,0 );
+       colors[16   ] = cv::Vec3b( 255   ,143     ,0 );
+       colors[17   ] = cv::Vec3b( 255   ,159     ,0 );
+       colors[18   ] = cv::Vec3b( 255   ,175     ,0 );
+       colors[19   ] = cv::Vec3b( 255   ,191     ,0 );
+       colors[20   ] = cv::Vec3b( 255   ,207     ,0 );
+       colors[21   ] = cv::Vec3b( 255   ,223     ,0 );
+       colors[22   ] = cv::Vec3b( 255   ,239     ,0 );
+       colors[23   ] = cv::Vec3b( 255   ,255     ,0 );
+       colors[24   ] = cv::Vec3b( 239   ,255    ,15 );
+       colors[25   ] = cv::Vec3b( 223   ,255    ,31 );
+       colors[26   ] = cv::Vec3b( 207   ,255    ,47 );
+       colors[27   ] = cv::Vec3b( 191   ,255    ,63 );
+       colors[28   ] = cv::Vec3b( 175   ,255    ,79 );
+       colors[29   ] = cv::Vec3b( 159   ,255    ,95 );
+       colors[30   ] = cv::Vec3b( 143   ,255   ,111 );
+       colors[31   ] = cv::Vec3b( 127   ,255   ,127 );
+       colors[32   ] = cv::Vec3b( 111   ,255   ,143 );
+       colors[33    ] = cv::Vec3b( 95   ,255   ,159 );
+       colors[34    ] = cv::Vec3b( 79   ,255   ,175 );
+       colors[35    ] = cv::Vec3b( 63   ,255   ,191 );
+       colors[36    ] = cv::Vec3b( 47   ,255   ,207 );
+       colors[37    ] = cv::Vec3b( 31   ,255   ,223 );
+       colors[38    ] = cv::Vec3b( 15   ,255   ,239 );
+       colors[39     ] = cv::Vec3b( 0   ,255   ,255 );
+       colors[40     ] = cv::Vec3b( 0   ,239   ,255 );
+       colors[41     ] = cv::Vec3b( 0   ,223   ,255 );
+       colors[42     ] = cv::Vec3b( 0   ,207   ,255 );
+       colors[43     ] = cv::Vec3b( 0   ,191   ,255 );
+       colors[44     ] = cv::Vec3b( 0   ,175   ,255 );
+       colors[45     ] = cv::Vec3b( 0   ,159   ,255 );
+       colors[46     ] = cv::Vec3b( 0   ,143   ,255 );
+       colors[47     ] = cv::Vec3b( 0   ,127   ,255 );
+       colors[48     ] = cv::Vec3b( 0   ,111   ,255 );
+       colors[49     ] = cv::Vec3b( 0    ,95   ,255 );
+       colors[50     ] = cv::Vec3b( 0    ,79   ,255 );
+       colors[51     ] = cv::Vec3b( 0    ,63   ,255 );
+       colors[52     ] = cv::Vec3b( 0    ,47   ,255 );
+       colors[53     ] = cv::Vec3b( 0    ,31   ,255 );
+       colors[54     ] = cv::Vec3b( 0    ,15   ,255 );
+       colors[55     ] = cv::Vec3b( 0     ,0   ,255 );
+       colors[56     ] = cv::Vec3b( 0     ,0   ,239 );
+       colors[57     ] = cv::Vec3b( 0     ,0   ,223 );
+       colors[58     ] = cv::Vec3b( 0     ,0   ,207 );
+       colors[59     ] = cv::Vec3b( 0     ,0   ,191 );
+       colors[60     ] = cv::Vec3b( 0     ,0   ,175 );
+       colors[61     ] = cv::Vec3b( 0     ,0   ,159 );
+       colors[62     ] = cv::Vec3b( 0     ,0   ,143 );
+       colors[63     ] = cv::Vec3b( 0     ,0   ,127 );
     }
 
     for( int j=0 ; j<residueAt.cols() ; j++ )
@@ -1168,8 +1196,8 @@ void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf resi
             float mag = residueAt(i,j);
             if( mag< 0.0f )
                 continue;
-            if( mag > 25.0f )
-                xim.at<cv::Vec3b>(i,j) = colors[31];
+            if( mag < 2.0f )
+                xim.at<cv::Vec3b>(i,j) = colors[0];
             else
             {
                 int colorIndx = (int)mag;
@@ -1302,8 +1330,10 @@ void SolveDVO::computeDistTransfrmOfRef()
     assert( isRefFrameAvailable && "Reference frames need to be available in order to compute dist transform on them" );
 
     ref_distance_transform.clear();
+    ref_edge_map.clear();
 
 
+    isRefDistTransfrmAvailable = false;
     //for each level
     for( int lvl=0 ; lvl<im_r.size() ; lvl++ )
     {
@@ -1332,6 +1362,49 @@ void SolveDVO::computeDistTransfrmOfRef()
         ref_distance_transform.push_back(refDistTrans);
         ref_edge_map.push_back(refEdgeMap);
     }
+
+    isRefDistTransfrmAvailable = true;
+}
+
+void SolveDVO::computeDistTransfrmOfNow()
+{
+    assert( isNowFrameAvailable && "Now frames need to be available in order to compute dist transform on them" );
+
+    now_distance_transform.clear();
+    now_edge_map.clear();
+
+
+    isNowDistTransfrmAvailable = false;
+    //for each level
+    for( int lvl=0 ; lvl<im_n.size() ; lvl++ )
+    {
+        Eigen::MatrixXf now_t = im_n[lvl];
+        ///// DISTANCE TRANSFORM of ref_t
+        ROS_INFO( "distance transform (level=%d)", lvl );
+        cv::Mat nowCvMat, nowEdge, nowDistTransCvMat;
+        cv::eigen2cv( now_t, nowCvMat );
+        cv::Sobel( nowCvMat, nowEdge, CV_8U, 1, 1 );
+        nowEdge = 255 - nowEdge;
+        cv::threshold( nowEdge, nowEdge, 250, 255, cv::THRESH_BINARY );
+        cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L1, 5 );
+        cv::normalize(nowDistTransCvMat, nowDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
+
+        double min, max;
+        cv::minMaxLoc(nowDistTransCvMat, &min, &max);
+        ROS_INFO_STREAM( "(Now)min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(nowDistTransCvMat.type()) );
+        ///// END DISTANCE TRANSFORM
+
+        Eigen::MatrixXf nowDistTrans;
+        Eigen::MatrixXi nowEdgeMap;
+        cv::cv2eigen(nowDistTransCvMat, nowDistTrans);
+        nowEdge = 255 - nowEdge; //done for visualization
+        cv::cv2eigen(nowEdge, nowEdgeMap);
+
+        now_distance_transform.push_back(nowDistTrans);
+        now_edge_map.push_back(nowEdgeMap);
+    }
+
+    isNowDistTransfrmAvailable = true;
 }
 
 
@@ -1458,7 +1531,8 @@ void SolveDVO::loop()
 //        ros::console::notifyLoggerLevelsChanged();
 
     char frameFileName[50];
-    const char * folder = "xdump_right2left";
+    //const char * folder = "xdump_right2left"; //hard dataset
+    const char * folder = "xdump_left2right";
 
     const int START = 30;
     const int END = 197;
@@ -1511,7 +1585,7 @@ void SolveDVO::loop()
             setNowFrame();
 
             ros::Time jstart = ros::Time::now();
-            gaussNewtonIterations(3, 7, cR, cT );
+            //gaussNewtonIterations(3, 7, cR, cT );
             gaussNewtonIterations(2, 7, cR, cT );
             gaussNewtonIterations(1, 7, cR, cT );
             gaussNewtonIterations(0, 7, cR, cT );
@@ -1531,12 +1605,16 @@ void SolveDVO::loop()
                 cv::imshow( "scratBoard", debugScratchBoard );
 
                 // Distance transform related shows
+
                 //imshowEigenImage( "refDistT", ref_distance_transform[__REPROJECTION_LEVEL]);
                 //imshowEigenImage("refEdges", ref_edge_map[__REPROJECTION_LEVEL]);
-                cv::Mat outDistVis;
-                sOverlay(ref_distance_transform[__REPROJECTION_LEVEL], ref_edge_map[__REPROJECTION_LEVEL], outDistVis, cv::Vec3b(255,255,0));
-                cv::imshow("distance-trans & edges overlay", outDistVis);
+                cv::Mat outDistVisRef;
+                sOverlay(ref_distance_transform[__REPROJECTION_LEVEL], ref_edge_map[__REPROJECTION_LEVEL], outDistVisRef, cv::Vec3b(255,255,0));
+                cv::imshow("dist-trans & edges overlay (of ref)", outDistVisRef);
 
+                cv::Mat outDistVisNow;
+                sOverlay(now_distance_transform[__REPROJECTION_LEVEL], now_edge_map[__REPROJECTION_LEVEL], outDistVisNow, cv::Vec3b(255,255,0));
+                cv::imshow("dist-trans & edges overlay (of now)", outDistVisNow);
 
                 // End distance transform related
 

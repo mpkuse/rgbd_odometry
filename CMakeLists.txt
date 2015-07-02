@@ -158,6 +158,8 @@ add_executable(dvo
     src/dvo.cpp
     src/SolveDVO.cpp
     include/SolveDVO.h
+    src/FColorMap.cpp
+    include/FColorMap.h
 )
 
 

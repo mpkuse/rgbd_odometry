@@ -35,6 +35,7 @@
 #include <sensor_msgs/PointCloud.h>
 #include <geometry_msgs/PoseStamped.h>
 
+#include <FColorMap.h>
 
 
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))

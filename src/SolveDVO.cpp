@@ -333,8 +333,14 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
     imageGradient(_ref, Gx, Gy );
 
 
+    // distance map
+    Eigen::MatrixXf _distMap = ref_distance_transform[level];
+    Eigen::MatrixXf dGx, dGy; //image gradient
+    imageGradient(_distMap, dGx, dGy);
 
-    int nGoodPts = selectedPts(Gx, Gy, refROI);
+
+
+    int nGoodPts = selectedPts(level, Gx, Gy, refROI);
     ROS_INFO( "# Good Points : %d", nGoodPts );
 
     ROS_WARN_COND( (nGoodPts<50), "[computeJacobian] Too few interesting points to compute Jacobian at");
@@ -955,19 +961,23 @@ void SolveDVO::sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat& xim
 
 /// @brief Makes a map of selected point.
 /// Given the Gx, Gy (Gradients), selects the interest points based on im grad.
-int SolveDVO::selectedPts(Eigen::MatrixXf &Gx, Eigen::MatrixXf &Gy, Eigen::MatrixXi& roi)
+int SolveDVO::selectedPts(int level, Eigen::MatrixXf &Gx, Eigen::MatrixXf &Gy, Eigen::MatrixXi& roi)
 {
 
     int count=0;
     assert( Gx.rows()>0 && Gy.rows() > 0 );
     assert( (Gx.rows() == Gy.rows())  &&  (Gx.cols() == Gy.cols()) );
 
+    Eigen::MatrixXi _edge = ref_edge_map[level];
+
+
     roi = Eigen::MatrixXi::Zero(Gx.rows(), Gx.cols());
-    for( int xx=0 ; xx<Gx.cols() ; xx+=2 )
+    for( int xx=0 ; xx<Gx.cols() ; xx++ )
     {
-        for( int yy=0 ; yy<Gx.rows() ; yy+=2 )
+        for( int yy=0 ; yy<Gx.rows() ; yy++ )
         {
             //if(   GRAD_NORM( Gx(yy,xx), Gy(yy,xx) ) >  grad_thresh   )
+            if( _edge(yy,xx) > 0 )
             {
                 count++;
                 roi(yy,xx) = 1;
@@ -1118,76 +1128,7 @@ void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf resi
 
 
     // make colors
-    std::vector<cv::Vec3b> colors;
-    colors.reserve(64);
-
-// defining 32 colors
-    {
-        colors[0   ] = cv::Vec3b( 143     ,0     ,0 );
-        colors[1   ] = cv::Vec3b( 159     ,0     ,0 );
-        colors[2   ] = cv::Vec3b( 175     ,0     ,0 );
-        colors[3   ] = cv::Vec3b( 191     ,0     ,0 );
-        colors[4   ] = cv::Vec3b( 207     ,0     ,0 );
-        colors[5   ] = cv::Vec3b( 223     ,0     ,0 );
-        colors[6   ] = cv::Vec3b( 239     ,0     ,0 );
-        colors[7   ] = cv::Vec3b( 255     ,0     ,0 );
-        colors[8   ] = cv::Vec3b( 255    ,15     ,0 );
-        colors[9   ] = cv::Vec3b( 255    ,31     ,0 );
-       colors[10   ] = cv::Vec3b( 255    ,47     ,0 );
-       colors[11   ] = cv::Vec3b( 255    ,63     ,0 );
-       colors[12   ] = cv::Vec3b( 255    ,79     ,0 );
-       colors[13   ] = cv::Vec3b( 255    ,95     ,0 );
-       colors[14   ] = cv::Vec3b( 255   ,111     ,0 );
-       colors[15   ] = cv::Vec3b( 255   ,127     ,0 );
-       colors[16   ] = cv::Vec3b( 255   ,143     ,0 );
-       colors[17   ] = cv::Vec3b( 255   ,159     ,0 );
-       colors[18   ] = cv::Vec3b( 255   ,175     ,0 );
-       colors[19   ] = cv::Vec3b( 255   ,191     ,0 );
-       colors[20   ] = cv::Vec3b( 255   ,207     ,0 );
-       colors[21   ] = cv::Vec3b( 255   ,223     ,0 );
-       colors[22   ] = cv::Vec3b( 255   ,239     ,0 );
-       colors[23   ] = cv::Vec3b( 255   ,255     ,0 );
-       colors[24   ] = cv::Vec3b( 239   ,255    ,15 );
-       colors[25   ] = cv::Vec3b( 223   ,255    ,31 );
-       colors[26   ] = cv::Vec3b( 207   ,255    ,47 );
-       colors[27   ] = cv::Vec3b( 191   ,255    ,63 );
-       colors[28   ] = cv::Vec3b( 175   ,255    ,79 );
-       colors[29   ] = cv::Vec3b( 159   ,255    ,95 );
-       colors[30   ] = cv::Vec3b( 143   ,255   ,111 );
-       colors[31   ] = cv::Vec3b( 127   ,255   ,127 );
-       colors[32   ] = cv::Vec3b( 111   ,255   ,143 );
-       colors[33    ] = cv::Vec3b( 95   ,255   ,159 );
-       colors[34    ] = cv::Vec3b( 79   ,255   ,175 );
-       colors[35    ] = cv::Vec3b( 63   ,255   ,191 );
-       colors[36    ] = cv::Vec3b( 47   ,255   ,207 );
-       colors[37    ] = cv::Vec3b( 31   ,255   ,223 );
-       colors[38    ] = cv::Vec3b( 15   ,255   ,239 );
-       colors[39     ] = cv::Vec3b( 0   ,255   ,255 );
-       colors[40     ] = cv::Vec3b( 0   ,239   ,255 );
-       colors[41     ] = cv::Vec3b( 0   ,223   ,255 );
-       colors[42     ] = cv::Vec3b( 0   ,207   ,255 );
-       colors[43     ] = cv::Vec3b( 0   ,191   ,255 );
-       colors[44     ] = cv::Vec3b( 0   ,175   ,255 );
-       colors[45     ] = cv::Vec3b( 0   ,159   ,255 );
-       colors[46     ] = cv::Vec3b( 0   ,143   ,255 );
-       colors[47     ] = cv::Vec3b( 0   ,127   ,255 );
-       colors[48     ] = cv::Vec3b( 0   ,111   ,255 );
-       colors[49     ] = cv::Vec3b( 0    ,95   ,255 );
-       colors[50     ] = cv::Vec3b( 0    ,79   ,255 );
-       colors[51     ] = cv::Vec3b( 0    ,63   ,255 );
-       colors[52     ] = cv::Vec3b( 0    ,47   ,255 );
-       colors[53     ] = cv::Vec3b( 0    ,31   ,255 );
-       colors[54     ] = cv::Vec3b( 0    ,15   ,255 );
-       colors[55     ] = cv::Vec3b( 0     ,0   ,255 );
-       colors[56     ] = cv::Vec3b( 0     ,0   ,239 );
-       colors[57     ] = cv::Vec3b( 0     ,0   ,223 );
-       colors[58     ] = cv::Vec3b( 0     ,0   ,207 );
-       colors[59     ] = cv::Vec3b( 0     ,0   ,191 );
-       colors[60     ] = cv::Vec3b( 0     ,0   ,175 );
-       colors[61     ] = cv::Vec3b( 0     ,0   ,159 );
-       colors[62     ] = cv::Vec3b( 0     ,0   ,143 );
-       colors[63     ] = cv::Vec3b( 0     ,0   ,127 );
-    }
+    FColorMap fcm(64);
 
     for( int j=0 ; j<residueAt.cols() ; j++ )
     {
@@ -1197,11 +1138,11 @@ void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf resi
             if( mag< 0.0f )
                 continue;
             if( mag < 2.0f )
-                xim.at<cv::Vec3b>(i,j) = colors[0];
+                xim.at<cv::Vec3b>(i,j) = fcm.at(0); //colors[0];
             else
             {
                 int colorIndx = (int)mag;
-                xim.at<cv::Vec3b>(i,j) = colors[colorIndx];
+                xim.at<cv::Vec3b>(i,j) = fcm.at(colorIndx); //colors[colorIndx];
             }
         }
     }
@@ -1227,75 +1168,7 @@ void SolveDVO::visualizeReprojectedDepth(Eigen::MatrixXf eim, Eigen::MatrixXf re
     cv::merge(ch,xim);
 
 
-    std::vector<cv::Vec3b> colors;
-    colors.reserve(64);
- // defining 64 colors
-    {
-        colors[0   ] = cv::Vec3b( 143     ,0     ,0 );
-        colors[1   ] = cv::Vec3b( 159     ,0     ,0 );
-        colors[2   ] = cv::Vec3b( 175     ,0     ,0 );
-        colors[3   ] = cv::Vec3b( 191     ,0     ,0 );
-        colors[4   ] = cv::Vec3b( 207     ,0     ,0 );
-        colors[5   ] = cv::Vec3b( 223     ,0     ,0 );
-        colors[6   ] = cv::Vec3b( 239     ,0     ,0 );
-        colors[7   ] = cv::Vec3b( 255     ,0     ,0 );
-        colors[8   ] = cv::Vec3b( 255    ,15     ,0 );
-        colors[9   ] = cv::Vec3b( 255    ,31     ,0 );
-       colors[10   ] = cv::Vec3b( 255    ,47     ,0 );
-       colors[11   ] = cv::Vec3b( 255    ,63     ,0 );
-       colors[12   ] = cv::Vec3b( 255    ,79     ,0 );
-       colors[13   ] = cv::Vec3b( 255    ,95     ,0 );
-       colors[14   ] = cv::Vec3b( 255   ,111     ,0 );
-       colors[15   ] = cv::Vec3b( 255   ,127     ,0 );
-       colors[16   ] = cv::Vec3b( 255   ,143     ,0 );
-       colors[17   ] = cv::Vec3b( 255   ,159     ,0 );
-       colors[18   ] = cv::Vec3b( 255   ,175     ,0 );
-       colors[19   ] = cv::Vec3b( 255   ,191     ,0 );
-       colors[20   ] = cv::Vec3b( 255   ,207     ,0 );
-       colors[21   ] = cv::Vec3b( 255   ,223     ,0 );
-       colors[22   ] = cv::Vec3b( 255   ,239     ,0 );
-       colors[23   ] = cv::Vec3b( 255   ,255     ,0 );
-       colors[24   ] = cv::Vec3b( 239   ,255    ,15 );
-       colors[25   ] = cv::Vec3b( 223   ,255    ,31 );
-       colors[26   ] = cv::Vec3b( 207   ,255    ,47 );
-       colors[27   ] = cv::Vec3b( 191   ,255    ,63 );
-       colors[28   ] = cv::Vec3b( 175   ,255    ,79 );
-       colors[29   ] = cv::Vec3b( 159   ,255    ,95 );
-       colors[30   ] = cv::Vec3b( 143   ,255   ,111 );
-       colors[31   ] = cv::Vec3b( 127   ,255   ,127 );
-       colors[32   ] = cv::Vec3b( 111   ,255   ,143 );
-       colors[33    ] = cv::Vec3b( 95   ,255   ,159 );
-       colors[34    ] = cv::Vec3b( 79   ,255   ,175 );
-       colors[35    ] = cv::Vec3b( 63   ,255   ,191 );
-       colors[36    ] = cv::Vec3b( 47   ,255   ,207 );
-       colors[37    ] = cv::Vec3b( 31   ,255   ,223 );
-       colors[38    ] = cv::Vec3b( 15   ,255   ,239 );
-       colors[39     ] = cv::Vec3b( 0   ,255   ,255 );
-       colors[40     ] = cv::Vec3b( 0   ,239   ,255 );
-       colors[41     ] = cv::Vec3b( 0   ,223   ,255 );
-       colors[42     ] = cv::Vec3b( 0   ,207   ,255 );
-       colors[43     ] = cv::Vec3b( 0   ,191   ,255 );
-       colors[44     ] = cv::Vec3b( 0   ,175   ,255 );
-       colors[45     ] = cv::Vec3b( 0   ,159   ,255 );
-       colors[46     ] = cv::Vec3b( 0   ,143   ,255 );
-       colors[47     ] = cv::Vec3b( 0   ,127   ,255 );
-       colors[48     ] = cv::Vec3b( 0   ,111   ,255 );
-       colors[49     ] = cv::Vec3b( 0    ,95   ,255 );
-       colors[50     ] = cv::Vec3b( 0    ,79   ,255 );
-       colors[51     ] = cv::Vec3b( 0    ,63   ,255 );
-       colors[52     ] = cv::Vec3b( 0    ,47   ,255 );
-       colors[53     ] = cv::Vec3b( 0    ,31   ,255 );
-       colors[54     ] = cv::Vec3b( 0    ,15   ,255 );
-       colors[55     ] = cv::Vec3b( 0     ,0   ,255 );
-       colors[56     ] = cv::Vec3b( 0     ,0   ,239 );
-       colors[57     ] = cv::Vec3b( 0     ,0   ,223 );
-       colors[58     ] = cv::Vec3b( 0     ,0   ,207 );
-       colors[59     ] = cv::Vec3b( 0     ,0   ,191 );
-       colors[60     ] = cv::Vec3b( 0     ,0   ,175 );
-       colors[61     ] = cv::Vec3b( 0     ,0   ,159 );
-       colors[62     ] = cv::Vec3b( 0     ,0   ,143 );
-       colors[63     ] = cv::Vec3b( 0     ,0   ,127 );
-    }
+    FColorMap fcm(64);
 
     for( int j=0 ; j<reprojDepth.cols() ; j++ )
     {
@@ -1313,7 +1186,7 @@ void SolveDVO::visualizeReprojectedDepth(Eigen::MatrixXf eim, Eigen::MatrixXf re
             else
                 colorIndx = (int)((mag-500.0)/5000.0f * 60.0f) + 1;
 
-            xim.at<cv::Vec3b>(i,j) = colors[colorIndx];
+            xim.at<cv::Vec3b>(i,j) = fcm.at(colorIndx); //colors[colorIndx];
         }
     }
 

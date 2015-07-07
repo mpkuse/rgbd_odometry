@@ -36,6 +36,8 @@
 #include <geometry_msgs/PoseStamped.h>
 
 
+#include <FColorMap.h>
+
 
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
@@ -118,7 +120,7 @@ private:
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
 
     float getWeightOf( float r );
-    int selectedPts(Eigen::MatrixXf& Gx, Eigen::MatrixXf& Gy, Eigen::MatrixXi &roi);
+    int selectedPts(int level, Eigen::MatrixXf& Gx, Eigen::MatrixXf &Gy, Eigen::MatrixXi &roi);
 
     bool signalGetNewRefImage;
 

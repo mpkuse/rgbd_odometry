@@ -107,13 +107,15 @@ private:
     //
     // Functions relating to the Gauss-Newton Iterations
     std::vector<JacobianList> _J;
+    std::vector<JacobianList> _Q; // jacobians of dist-trans at edge pix only.
     std::vector<ImCordList> _imCord;
     std::vector<SpaceCordList> _spCord;
     std::vector<IntensityList> _intensities;
+    std::vector<IntensityList> _dist_intensities;
     std::vector<Eigen::MatrixXi> _roi;
     bool isJacobianComputed;
     void computeJacobian();
-    void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
+    void computeJacobian(int level, JacobianList &J, JacobianList &Q, ImCordList &imC, SpaceCordList &spC, IntensityList &I, IntensityList& dist_intensity, Eigen::MatrixXi &refROI );
     void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT );
     float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );

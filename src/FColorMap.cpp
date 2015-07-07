@@ -77,8 +77,8 @@ FColorMap::FColorMap(int nColors)
     colors[63     ] = cv::Vec3b( 0     ,0   ,127 );
 }
 
-cv::Vec3b &FColorMap::at(int i)
+cv::Vec3b& FColorMap::at(int i)
 {
-    assert( i>=0  && i<colors.size() && i++ );
+    //assert( i>=0  && i<colors.size()  );
     return colors[i];
 }

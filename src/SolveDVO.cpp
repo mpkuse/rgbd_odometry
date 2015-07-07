@@ -18,7 +18,7 @@ SolveDVO::SolveDVO()
     // Setting up some global constants
     grad_thresh = 6;
     rviz_frame_id = "denseVO";
-    ratio_of_visible_pts_thresh = 0.5;
+    ratio_of_visible_pts_thresh = 0.4;
     laplacianThreshExitCond = 15.0f;
 
 
@@ -286,25 +286,31 @@ void SolveDVO::setNowFrame()
 void SolveDVO::computeJacobian()
 {
     _J.clear();
+    _Q.clear();
     _imCord.clear();
     _spCord.clear();
     _intensities.clear();
+    _dist_intensities.clear();
     _roi.clear();
     for( int level=0 ; level<4 ; level++ )
     {
         JacobianList J;
+        JacobianList Q; //note: size of Q and J will be different
         ImCordList ImC;
         SpaceCordList SpC;
         IntensityList inL;
+        IntensityList dist_inL;
         Eigen::MatrixXi roi;
 
-        computeJacobian(level, J, ImC, SpC, inL, roi );
+        computeJacobian(level, J, Q, ImC, SpC, inL, dist_inL, roi );
 
         //push_back everything on global variables
         _J.push_back(J);
+        _Q.push_back(Q);
         _imCord.push_back(ImC);
         _spCord.push_back(SpC);
         _intensities.push_back(inL);
+        _dist_intensities.push_back(dist_inL);
         _roi.push_back(roi);
     }
     isJacobianComputed = true;
@@ -313,7 +319,7 @@ void SolveDVO::computeJacobian()
 
 /// @brief Computes the Jacobian matrix of the reference frame
 ///
-void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, SpaceCordList& spC, IntensityList& intensity, Eigen::MatrixXi& refROI )
+void SolveDVO::computeJacobian(int level, JacobianList& J, JacobianList& Q, ImCordList& imC, SpaceCordList& spC, IntensityList& intensity, IntensityList& dist_intensity, Eigen::MatrixXi& refROI )
 {
     assert( level >= 0 && level <= 3 );
     assert( isRefFrameAvailable ); //because jacobian is computed at reference frame (inverse formulation)
@@ -326,31 +332,43 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
     Eigen::MatrixXf _ref = im_r[level];
     Eigen::MatrixXf _depth = dim_r[level];
 
+    Eigen::MatrixXf _distTran = ref_distance_transform[level];
+    Eigen::MatrixXi _edgeMap = ref_edge_map[level];
+    int nRefEdgePts = _edgeMap.sum();
+    assert( nRefEdgePts > 0 );
 
 
     // Image gradient computation
     Eigen::MatrixXf Gx, Gy; //image gradient
     imageGradient(_ref, Gx, Gy );
 
+    // Im Grad of distance-transform
+    Eigen::MatrixXf dGx, dGy;
+    imageGradient(_distTran, dGx, dGy);
+
 
 
     int nGoodPts = selectedPts(Gx, Gy, refROI);
     ROS_INFO( "# Good Points : %d", nGoodPts );
+    ROS_INFO( "# Edge Points : %d", nRefEdgePts );
+
 
     ROS_WARN_COND( (nGoodPts<50), "[computeJacobian] Too few interesting points to compute Jacobian at");
 
 
     // init the return values
     J.clear(); J.reserve(nGoodPts);
+    Q.clear(); Q.reserve(nRefEdgePts); // `nRefEdgePts` is computed in computeDistTransfrmOfRef()
     imC = Eigen::MatrixXf::Zero(2,nGoodPts);
     spC = Eigen::MatrixXf::Zero(3,nGoodPts);
     //intensity.clear(); intensity.reserve(nGoodPts);
     intensity = Eigen::VectorXf::Zero(nGoodPts);
+    dist_intensity = Eigen::VectorXf::Zero(nRefEdgePts);
     //do not init refROI here. it is computed in countSelectedPts()
 
 
     //loop thru all the interesting points
-    ROS_INFO( "loop begins");
+    ROS_INFO( "photometric loop begins");
     int nPtCount = 0;
     Eigen::MatrixXf A1 = Eigen::MatrixXf::Zero(2,3);
     Eigen::MatrixXf A2 = Eigen::MatrixXf::Zero(3,6);
@@ -362,6 +380,7 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
     float tmpcx = scaleFac*cx;
     float tmpcy = scaleFac*cy;
 
+    // Photometric Error Related
     for( int xx=0 ; xx<Gx.cols() ; xx++ )
     {
         for( int yy=0 ; yy<Gx.rows() ; yy++ )
@@ -417,14 +436,71 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
             }
         }
     }
-    ROS_INFO( "loop ends");
+    ROS_INFO( "photometric loop ends");
+
+
+
+
+    // Geometric Error
+    ROS_INFO( "geometric loop begins");
+    int nGtCount=0;
+    for( int xx=0 ; xx<Gx.cols() ; xx++ )
+    {
+        for( int yy=0 ; yy<Gx.rows() ; yy++ )
+        {
+            float Z = _depth(yy,xx);
+            if(   _edgeMap(yy,xx) > 0   )
+            {
+                // compute 3d point (using depth) --(1)
+
+                float X = Z * (xx-tmpcx) * tmpfx;
+                float Y = Z * (yy-tmpcy) * tmpfy;
+
+
+
+                // compute Jacobian
+                // G (re-using the same variable)
+                G(0) = dGx(yy,xx);
+                G(1) = dGy(yy,xx);
+
+                // A1
+                A1(0,0) = scaleFac*fx/Z;
+                A1(0,1) = 0.;
+                A1(0,2) = -scaleFac*fx*X/(Z*Z);
+                A1(1,0) = 0.;
+                A1(1,1) = scaleFac*fy/Z;
+                A1(1,2) = -scaleFac*fy*Y/(Z*Z);
+
+                // A2
+                A2.block<3,3>(0,0) = -Eigen::MatrixXf::Identity(3,3);
+                Eigen::Matrix3f wx;
+                to_se_3(X,Y,Z, wx );
+                A2.block<3,3>(0,3) = wx;
+
+
+                Eigen::RowVectorXf Q_i = G * A1 * A2;
+
+
+                Q.push_back(Q_i);
+                dist_intensity(nGtCount) = _distTran(yy,xx);
+
+                nGtCount++;
+            }
+        }
+    }
+    ROS_INFO( "geometric loop ends");
+
+
+
+
 
     ROS_INFO( "# Image Cordinates : %d", nPtCount);
     ROS_INFO( "# Space Cordinates : %d", nPtCount);
     ROS_INFO( "# Ref Intensities  : %d", (int)intensity.size());
-    ROS_INFO( "# Jacobians        : %d", (int)J.size());
+    ROS_INFO( "# Jacobians (J)    : %d", (int)J.size());
+    ROS_INFO( "# Jacobians (Q)    : %d", (int)Q.size());
 
-    assert( (nPtCount == nGoodPts) && (nPtCount==(int)intensity.size()) && (intensity.size() == J.size()) );
+    assert( (nPtCount == nGoodPts) && (nPtCount==(int)intensity.size()) && (intensity.size() == J.size()) && (Q.size()==nRefEdgePts) && (nGtCount==nRefEdgePts) );
 
     ROS_INFO("End of Jacobian Computation");
 }
@@ -710,7 +786,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
             r = grays_ref(i) - _now(yy,xx);
 
             float weight = getWeightOf( r );
-            if( pts3d_ref(2,i) < 100.0f ) // if the Z of a point is small ignore that point. Smaller Z (usually less than 400) are inaccurate
+            if( pts3d_ref(2,i) < 500.0f ) // if the Z of a point is small ignore that point. Smaller Z (usually less than 400) are inaccurate
                 weight = 0.0;
 
 
@@ -722,7 +798,7 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
             if( level == __REPROJECTION_LEVEL )
             {
 #if defined(_IGNORE__NEAR_PTS_DISPLAY____)
-                if( pts3d_ref(2,i) >= 100.0f )
+                if( pts3d_ref(2,i) >= 500.0f )
 #endif
                 {
                     __now_roi_reproj(yy,xx) = 1;
@@ -755,6 +831,21 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
 
 
     }
+
+
+
+    // Geometric Regularization component
+    JacobianList jacobQ = _Q[level];
+    IntensityList distInt = _dist_intensities[level];
+    for( int p=0 ; p<jacobQ.size() ; p++ )
+    {
+        A += (jacobQ[p].transpose() * jacobQ[p]);
+        b += distInt(p) * jacobQ[p].transpose();
+    }
+
+
+
+
     b = -b;
 
     ROS_DEBUG( "# Points (of ref-frame) visible in now-frame : %d", nPtVisible );
@@ -1116,8 +1207,6 @@ void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf resi
     ch.push_back(tmpIm8);
     cv::merge(ch,xim);
 
-
-
     FColorMap fcp(64);
 
 
@@ -1159,8 +1248,8 @@ void SolveDVO::visualizeReprojectedDepth(Eigen::MatrixXf eim, Eigen::MatrixXf re
     cv::merge(ch,xim);
 
 
-
     FColorMap fcp(64);
+
 
     for( int j=0 ; j<reprojDepth.cols() ; j++ )
     {
@@ -1216,7 +1305,7 @@ void SolveDVO::computeDistTransfrmOfRef()
         cv::Canny( refCvMat, refEdge, 250, 50 );
         refEdge = 255 - refEdge;
 
-        cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L1, 5 );
+        cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L2, 5 );
         cv::normalize(refDistTransCvMat, refDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
 
         double min, max;
@@ -1229,6 +1318,8 @@ void SolveDVO::computeDistTransfrmOfRef()
         cv::cv2eigen(refDistTransCvMat, refDistTrans);
         refEdge = 255 - refEdge; //done for visualization
         cv::cv2eigen(refEdge, refEdgeMap);
+        refEdgeMap /= 255; //make to {0, 1} matrix
+
 
         ref_distance_transform.push_back(refDistTrans);
         ref_edge_map.push_back(refEdgeMap);
@@ -1278,6 +1369,7 @@ void SolveDVO::computeDistTransfrmOfNow()
         cv::cv2eigen(nowDistTransCvMat, nowDistTrans);
         nowEdge = 255 - nowEdge; //done for visualization
         cv::cv2eigen(nowEdge, nowEdgeMap);
+        nowEdgeMap /= 255;
 
         now_distance_transform.push_back(nowDistTrans);
         now_edge_map.push_back(nowEdgeMap);
@@ -1292,11 +1384,13 @@ void SolveDVO::computeDistTransfrmOfNow()
 void SolveDVO::loop()
 {
 
-/*
+
     ros::Rate rate(30);
     long nFrame=0;
     long lastRefFrame=0;
     double lastRefFrameComputeTime;
+    double gaussNewtonIterationsComputeTime;
+
     cv::Mat debugScratchBoard = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
 
 
@@ -1347,7 +1441,7 @@ void SolveDVO::loop()
 
         setNowFrame();
             ros::Time jstart = ros::Time::now();
-            gaussNewtonIterations(3, 7, cR, cT );
+            //gaussNewtonIterations(3, 7, cR, cT );
             gaussNewtonIterations(2, 7, cR, cT );
             gaussNewtonIterations(1, 7, cR, cT );
             gaussNewtonIterations(0, 7, cR, cT );
@@ -1371,11 +1465,32 @@ void SolveDVO::loop()
         //Debugging display of re-projected points
         {
             int i = 0;
+            processResidueHistogram( __residues, false );
+            visualizeResidueHeatMap(im_n[__REPROJECTION_LEVEL], __now_roi_reproj_values );
+            visualizeReprojectedDepth(im_n[__REPROJECTION_LEVEL], __reprojected_depth);
+
 
             processResidueHistogram( __residues );
 
             printFrameIndex2Scratch(debugScratchBoard, nFrame, lastRefFrame, lastRefFrameComputeTime, gaussNewtonIterationsComputeTime, true );
             cv::imshow( "scratBoard", debugScratchBoard );
+
+
+            // Distance transform related shows
+
+            //imshowEigenImage( "refDistT", ref_distance_transform[__REPROJECTION_LEVEL]);
+            //imshowEigenImage("refEdges", ref_edge_map[__REPROJECTION_LEVEL]);
+            cv::Mat outDistVisRef;
+            sOverlay(ref_distance_transform[__REPROJECTION_LEVEL], ref_edge_map[__REPROJECTION_LEVEL], outDistVisRef, cv::Vec3b(255,255,0));
+            cv::imshow("dist-trans & edges overlay (of ref)", outDistVisRef);
+
+            cv::Mat outDistVisNow;
+            sOverlay(now_distance_transform[__REPROJECTION_LEVEL], now_edge_map[__REPROJECTION_LEVEL], outDistVisNow, cv::Vec3b(255,255,0));
+            cv::imshow("dist-trans & edges overlay (of now)", outDistVisNow);
+
+            // End distance transform related
+
+
 
             //for( i=0 ; i<im_n.size() ; i++ )
 //            {
@@ -1400,12 +1515,12 @@ void SolveDVO::loop()
         rate.sleep();
         nFrame++;
     }
-*/
 
 
 
 
 
+/*
 //    if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) )
 //        ros::console::notifyLoggerLevelsChanged();
 
@@ -1531,7 +1646,7 @@ void SolveDVO::loop()
             //    rate.sleep();
         }
     }
-
+*/
 
 
 

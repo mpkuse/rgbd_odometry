@@ -21,6 +21,7 @@
 #include <sophus/se3.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <Eigen/Sparse>
 #include <igl/repmat.h>
 
 #include <opencv2/highgui/highgui.hpp>
@@ -60,6 +61,7 @@ typedef Eigen::MatrixXf ImCordList;  //2xN
 typedef Eigen::MatrixXf SpaceCordList; //3xN
 //typedef std::vector<float> IntensityList;
 typedef Eigen::VectorXf IntensityList;
+typedef Eigen::MatrixXf JacobianLongMatrix;
 
 
 
@@ -113,14 +115,14 @@ private:
     std::vector<IntensityList> _intensities;
     std::vector<Eigen::MatrixXi> _roi;
     bool isJacobianComputed;
-    void computeJacobian();
-    void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
+    //void computeJacobian();
+    //void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
     void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT );
     float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
 
     float getWeightOf( float r );
-    int selectedPts(int level, Eigen::MatrixXf& Gx, Eigen::MatrixXf &Gy, Eigen::MatrixXi &roi);
+    int selectedPts(int level, Eigen::MatrixXi &roi);
 
     bool signalGetNewRefImage;
 
@@ -165,6 +167,23 @@ private:
     bool loadFromFile( const char * xmlFileName );
     void printFrameIndex2Scratch( cv::Mat scratch, long nowIndx, long lastRef, double time4Jacobian, double time4Iteration, bool cleanScratch  );
     std::string cvMatType2str(int type);
+
+
+
+    //
+    // Forward formulation related function (8th July, 2015)
+    // selectedPts //< already declared above
+    std::vector<SpaceCordList> _ref_edge_3d;
+    std::vector<ImCordList> _ref_edge_2d;
+    std::vector<Eigen::MatrixXi> _ref_roi_mask;
+
+
+    void enlistRefEdgePts( int level, Eigen::MatrixXi &refEdgePtsMask, SpaceCordList& _3d, ImCordList& _2d );
+    void preProcessRefFrame();
+    void computeJacobianOfNowFrame( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, JacobianLongMatrix& Jcbian, Eigen::MatrixXf &reprojections );
+    void getReprojectedEpsilons( int level, Eigen::MatrixXf &reprojections, Eigen::VectorXf &epsilon, Eigen::VectorXf &W );
+
+    void cordList_2_mask( Eigen::MatrixXf& list, Eigen::MatrixXi &mask); //make sure mask is preallocated
 
 
 

@@ -750,6 +750,11 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         cv::imshow( "reprojection with cR,cT (on now dist-tran", outIm);
         cv::imshow( "reprojection with cR,cT (on now gray", outImGray);
         cv::imshow( "selected edges on ref", outRef);
+
+
+        processResidueHistogram( epsilon, false );
+
+
         char ch = cv::waitKey(0);
         if( ch == 27 ){ // ESC
             ROS_ERROR( "ESC pressed quitting...");
@@ -1258,12 +1263,12 @@ void SolveDVO::processResidueHistogram(Eigen::VectorXf residi, bool quite=true)
         histPlot = cv::Mat::zeros( 500, 450, CV_8UC3 ) + cv::Scalar(255,255,255);
         //red-dots on vertical
         cv::line(histPlot, cv::Point(1,histPlot.rows-1), cv::Point(1,0), cv::Scalar(0,0,0) );
-        for( float mag = 0 ; mag< .3f ; mag+=0.02f )
+        for( float mag = 0 ; mag< .95f ; mag+=0.05f )
         {
-            cv::circle(histPlot, cv::Point(1,histPlot.rows-20-int(mag*2000.0)),  2, cv::Scalar(0,0,255), -1);
+            cv::circle(histPlot, cv::Point(1,histPlot.rows-20-int(mag*500.0)),  2, cv::Scalar(0,0,255), -1);
             char toS[20];
             sprintf( toS, "%.2f", mag );
-            cv::putText( histPlot, toS, cv::Point(10,histPlot.rows-20-int(mag*2000.0)), cv::FONT_HERSHEY_COMPLEX_SMALL, .7, cv::Scalar(0,0,0) );
+            cv::putText( histPlot, toS, cv::Point(10,histPlot.rows-20-int(mag*500.0)), cv::FONT_HERSHEY_COMPLEX_SMALL, .7, cv::Scalar(0,0,0) );
         }
     }
 
@@ -1278,7 +1283,7 @@ void SolveDVO::processResidueHistogram(Eigen::VectorXf residi, bool quite=true)
         for(int i = 0; i < 256; i++)
         {
             float mag = histogram(i);
-            cv::line(histPlot,cv::Point(2*i,histPlot.rows-20),cv::Point(2*i,histPlot.rows-20-int(mag*2000.0)),cv::Scalar(255,0,0));
+            cv::line(histPlot,cv::Point(2*i,histPlot.rows-20),cv::Point(2*i,histPlot.rows-20-int(mag*500.0)),cv::Scalar(255,0,0));
             if( (2*(i-1))%50 == 0 )
             {
                 cv::circle( histPlot, cv::Point(2*i,histPlot.rows-20), 2, cv::Scalar(0,0,255), -1 );
@@ -1314,7 +1319,7 @@ void SolveDVO::processResidueHistogram(Eigen::VectorXf residi, bool quite=true)
         for( int i=1 ; i<256 ; i++ )
         {
             float mag = 1/(2*b_cap) * exp( -(i-1)/b_cap );
-            cv::circle(histPlot, cv::Point(2*i,histPlot.rows-20-mag*2000.), 2, cv::Scalar(255,255,0), -1 );
+            cv::circle(histPlot, cv::Point(2*i,histPlot.rows-20-mag*500.), 2, cv::Scalar(255,255,0), -1 );
         }
 
 

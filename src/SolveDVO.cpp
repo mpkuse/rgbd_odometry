@@ -659,6 +659,8 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
     ROS_DEBUG_STREAM( "init T :\n"<< cT.transpose() );
 
 
+    float prevTotalEpsilon = 1.0E10;
+    float lambda = 1000000.0;
     for( int itr=0 ; itr< maxIterations ; itr++ ) {
 
         ROS_INFO( "== Iteration %d ==", itr );
@@ -677,8 +679,6 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         ROS_INFO( "size of reprojection : %d %d", reprojections.rows(), reprojections.cols() );
 
 
-
-
         //
         // Get corresponding epsilons
         //       Get distances at points given by `reprojections` 2xN matrix
@@ -688,12 +688,25 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 
         //
+        // Update Marqt parameter (lambda)
+        if( prevTotalEpsilon < epsilon.sum() ){ //divergence
+            ROS_INFO( "DIVERGENCE => Increase lambda");
+            lambda *= 3.0;
+        }
+        else
+            lambda /= 1.5;
+        ROS_INFO( "Lambda = %f", lambda );
+
+        prevTotalEpsilon = epsilon.sum();
+
+
+        //
         // Make normal equations & Solve them
         Eigen::MatrixXf JTW = Jcbian.transpose(); //J' * W
         for( int i=0 ; i<weights.rows() ; i++ )
             JTW.col(i) *= weights(i);
 
-        Eigen::MatrixXf A = JTW * Jcbian;
+        Eigen::MatrixXf A = JTW * Jcbian + lambda * Eigen::MatrixXf::Identity(6,6);
         Eigen::MatrixXf b = -JTW * epsilon;
 
         Eigen::VectorXf psi = A.colPivHouseholderQr().solve(b);
@@ -702,8 +715,8 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
         //
         // Update R_cap, T_cap
-            Eigen::Matrix3f wx;
-            to_se_3( psi(3), psi(4), psi(5), wx );
+            //Eigen::Matrix3f wx;
+            //to_se_3( psi(3), psi(4), psi(5), wx );
             //cR = cR * ( Eigen::Matrix3f::Identity() + wx );
             //cT = cT + Eigen::Vector3f(psi(0), psi(1), psi(2));
 
@@ -715,14 +728,16 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         xTrans = mat.translation();
 
         cT = cR*xTrans + cT;
-        //cR = cR * xRot;
-        cR = cR * ( Eigen::Matrix3f::Identity() + wx );
+        cR = cR * xRot;
 
 
 
 
+
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         //
         // DISPLAY
+        printRT( cR, cT, "Updated cR,cT");
         {
         if( __REPROJECTION_LEVEL == level ){
         Eigen::MatrixXi reprojectedMask = Eigen::MatrixXi::Zero(_now.rows(), _now.cols());
@@ -740,10 +755,13 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
             ROS_ERROR( "ESC pressed quitting...");
             exit(1);
         }
+        if( ch == 'b')
+            break;
         }
         }
         //
         // END DISPLAY
+#endif
 
     }
 
@@ -1009,12 +1027,20 @@ void SolveDVO::imageGradient(Eigen::MatrixXf& image, Eigen::MatrixXf &gradientX,
     cv::Mat tmpIm32f;
     cv::eigen2cv( image, tmpIm32f );
     // Kernerls for grad computation
+//    cv::Mat kernX = (cv::Mat_<float>(3,3) <<  0, 0,  0,
+//            0,  -1.0, 1.0,
+//            0, 0,  0);
+//    cv::Mat kernY = (cv::Mat_<float>(3,3) <<  0, 0,  0,
+//            0,  -1.0, 0,
+//            0, 1.0,  0);
+
     cv::Mat kernX = (cv::Mat_<float>(3,3) <<  0, 0,  0,
-            0,  -1.0, 1.0,
+            -0.5,  0.0, .5,
             0, 0,  0);
-    cv::Mat kernY = (cv::Mat_<float>(3,3) <<  0, 0,  0,
-            0,  -1.0, 0,
-            0, 1.0,  0);
+    cv::Mat kernY = (cv::Mat_<float>(3,3) <<  0, -0.5,  0,
+            0,  0.0, 0,
+            0, 0.5,  0);
+
 
 
 
@@ -1663,9 +1689,9 @@ void SolveDVO::loop()
 
             ros::Time jstart = ros::Time::now();
             //gaussNewtonIterations(3, 7, cR, cT );
-            //gaussNewtonIterations(2, 7, cR, cT );
+            gaussNewtonIterations(2, 7, cR, cT );
             gaussNewtonIterations(1, 7, cR, cT );
-            gaussNewtonIterations(0, 7, cR, cT );
+            gaussNewtonIterations(0, 100, cR, cT );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();
             ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );

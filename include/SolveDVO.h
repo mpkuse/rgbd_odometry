@@ -43,7 +43,7 @@
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
 
-//#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 
 #define __COLLECT_EPSILON_DEBUG__DATA_
 #define _IGNORE__NEAR_PTS_DISPLAY____

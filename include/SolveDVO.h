@@ -64,6 +64,9 @@ typedef Eigen::VectorXf IntensityList;
 typedef Eigen::MatrixXf JacobianLongMatrix;
 
 
+// inverse formulation of dist-transform
+typedef Eigen::Matrix<float, 1, 6> RowVector6f;
+
 
 /// Defines the class to handle streaming images and compute camera pose from RGBD images ie. dense visual odometry (DVO)
 class SolveDVO
@@ -173,9 +176,9 @@ private:
     //
     // Forward formulation related function (8th July, 2015)
     // selectedPts //< already declared above
-    std::vector<SpaceCordList> _ref_edge_3d;
-    std::vector<ImCordList> _ref_edge_2d;
-    std::vector<Eigen::MatrixXi> _ref_roi_mask;
+    std::vector<SpaceCordList> _ref_edge_3d; ///< Stores the edge points of the reference frame in 3d ie. `E_i`
+    std::vector<ImCordList> _ref_edge_2d; ///< Stores edge image co-ordinates (2d) ie. `e_i`
+    std::vector<Eigen::MatrixXi> _ref_roi_mask; ///< Reference selected edge points
 
 
     void enlistRefEdgePts( int level, Eigen::MatrixXi &refEdgePtsMask, SpaceCordList& _3d, ImCordList& _2d );

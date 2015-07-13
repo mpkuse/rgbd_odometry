@@ -198,6 +198,12 @@ std::string SolveDVO::cvMatType2str(int type)
     return r;
 }
 
+/// @brief Given a mask of reference edge points, lists the edge points (as 3xN & 2xN)
+/// @param[in] level : Pyramidal level
+/// @param[in] refEdgePtsMask : Edge masks of the reference frame
+/// @param[out] _3d : 3d edge points `E_i`s
+/// @param[out] _2d : 2d edge points `e_i`s
+/// @note Uses K (intrinsic parameters), and depth map of reference frame
 void SolveDVO::enlistRefEdgePts(int level, Eigen::MatrixXi& refEdgePtsMask, SpaceCordList &_3d, ImCordList &_2d)
 {
     assert( refEdgePtsMask.sum() == _3d.cols() );
@@ -240,8 +246,12 @@ void SolveDVO::enlistRefEdgePts(int level, Eigen::MatrixXi& refEdgePtsMask, Spac
 
 }
 
+
+
+/// Selects edge points of reference frame at each pyramidal level
 void SolveDVO::preProcessRefFrame()
 {
+    assert( isRefFrameAvailable );
     _ref_edge_3d.clear();
     _ref_edge_2d.clear();
     _ref_roi_mask.clear();
@@ -249,21 +259,21 @@ void SolveDVO::preProcessRefFrame()
     for( int level=0 ; level<im_r.size() ; level++ )
     {
         //
-        // Select points in Ref frame
+        /// Select points in Ref frame
         Eigen::MatrixXi _roi_ref;
         int nSelectedPts = selectedPts( level, _roi_ref );
         assert( nSelectedPts > 0 );
 
 
         //
-        // Enlist these selected pts (edge pts in ref) as 3d points using the depth-image obtained from Xtion
+        /// Enlist these selected pts (edge pts in ref) as 3d points using the depth-image obtained from Xtion
         SpaceCordList _3d = Eigen::MatrixXf::Zero(3, nSelectedPts);
         ImCordList _2d = Eigen::MatrixXf::Zero(2, nSelectedPts);
         enlistRefEdgePts( level, _roi_ref, _3d, _2d );
 
 
         //
-        // Push
+        /// Push of pyramial-vector
         _ref_edge_3d.push_back(_3d);
         _ref_edge_2d.push_back(_2d);
         _ref_roi_mask.push_back(_roi_ref);
@@ -364,6 +374,7 @@ void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::
 
 }
 
+/// @brief Given the reprojection mask, get corresponding epsilons and also weight as a vector
 void SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections, Eigen::VectorXf& epsilon, Eigen::VectorXf &weights)
 {
     Eigen::MatrixXf _nowDist = now_distance_transform[level];
@@ -385,6 +396,8 @@ void SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections,
     ROS_INFO( "Epsilon computed at %d of %d reprojected points", reprojections.cols()-notJ,reprojections.cols());
 }
 
+
+/// Given a list of co-ordinates make a mask of out of it
 void SolveDVO::cordList_2_mask(Eigen::MatrixXf &list, Eigen::MatrixXi &mask)
 {
     assert( mask.rows() > 0 && mask.cols() > 0 );
@@ -1696,7 +1709,7 @@ void SolveDVO::loop()
             //gaussNewtonIterations(3, 7, cR, cT );
             gaussNewtonIterations(2, 7, cR, cT );
             gaussNewtonIterations(1, 7, cR, cT );
-            gaussNewtonIterations(0, 100, cR, cT );
+            gaussNewtonIterations(0, 7, cR, cT );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();
             ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );

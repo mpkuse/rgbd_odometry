@@ -157,11 +157,15 @@ private:
     bool isRefDistTransfrmAvailable;
     std::vector<Eigen::MatrixXf> ref_distance_transform;
     std::vector<Eigen::MatrixXi> ref_edge_map;
+    std::vector<Eigen::MatrixXf> ref_DT_gradientX;
+    std::vector<Eigen::MatrixXf> ref_DT_gradientY;
     void computeDistTransfrmOfRef();
 
     bool isNowDistTransfrmAvailable;
     std::vector<Eigen::MatrixXf> now_distance_transform;
     std::vector<Eigen::MatrixXi> now_edge_map;
+    std::vector<Eigen::MatrixXf> now_DT_gradientX;
+    std::vector<Eigen::MatrixXf> now_DT_gradientY;
     void computeDistTransfrmOfNow();
 
     void visualizeDistanceResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXi reprojectionMask, Eigen::MatrixXf nowDistMap );

@@ -297,7 +297,9 @@ void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::
 
     // grad of dist transform
     Eigen::MatrixXf dGx, dGy; //image gradient
-    imageGradient(_nowDist, dGx, dGy);
+//    imageGradient(_nowDist, dGx, dGy);
+    dGx = now_DT_gradientX[level];
+    dGy = now_DT_gradientY[level];
 
 
     SpaceCordList _3d = _ref_edge_3d[level];
@@ -1551,6 +1553,8 @@ void SolveDVO::computeDistTransfrmOfRef()
 
     ref_distance_transform.clear();
     ref_edge_map.clear();
+    ref_DT_gradientX.clear();
+    ref_DT_gradientY.clear();
 
 
     isRefDistTransfrmAvailable = false;
@@ -1586,6 +1590,13 @@ void SolveDVO::computeDistTransfrmOfRef()
         refEdge = 255 - refEdge; //done for visualization
         cv::cv2eigen(refEdge, refEdgeMap);
 
+        // grad of dist transform
+        Eigen::MatrixXf dGx, dGy; //image gradient
+        imageGradient(refDistTrans, dGx, dGy);
+        ref_DT_gradientX.push_back(dGx);
+        ref_DT_gradientY.push_back(dGy);
+
+
         ref_distance_transform.push_back(refDistTrans);
         ref_edge_map.push_back(refEdgeMap);
     }
@@ -1599,6 +1610,8 @@ void SolveDVO::computeDistTransfrmOfNow()
 
     now_distance_transform.clear();
     now_edge_map.clear();
+    now_DT_gradientX.clear();
+    now_DT_gradientY.clear();
 
 
     isNowDistTransfrmAvailable = false;
@@ -1634,6 +1647,12 @@ void SolveDVO::computeDistTransfrmOfNow()
         cv::cv2eigen(nowDistTransCvMat, nowDistTrans);
         nowEdge = 255 - nowEdge; //done for visualization
         cv::cv2eigen(nowEdge, nowEdgeMap);
+
+        // grad of dist transform
+        Eigen::MatrixXf dGx, dGy; //image gradient
+        imageGradient(nowDistTrans, dGx, dGy);
+        now_DT_gradientX.push_back(dGx);
+        now_DT_gradientY.push_back(dGy);
 
         now_distance_transform.push_back(nowDistTrans);
         now_edge_map.push_back(nowEdgeMap);
@@ -1838,7 +1857,7 @@ void SolveDVO::loop()
             //gaussNewtonIterations(3, 7, cR, cT );
             //gaussNewtonIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections  );
             //gaussNewtonIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections );
-            gaussNewtonIterations(0, 101, cR, cT, energyAtEachIteration, epsilonVec, reprojections );
+            gaussNewtonIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();
             ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );

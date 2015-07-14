@@ -43,7 +43,7 @@
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
 
-#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+//#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 
 #define __COLLECT_EPSILON_DEBUG__DATA_
 #define _IGNORE__NEAR_PTS_DISPLAY____
@@ -120,7 +120,7 @@ private:
     bool isJacobianComputed;
     //void computeJacobian();
     //void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
-    void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT );
+    void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT, Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons, Eigen::MatrixXf& finalReprojections );
     float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
 
@@ -161,6 +161,9 @@ private:
     std::vector<Eigen::MatrixXi> now_edge_map;
     void computeDistTransfrmOfNow();
 
+    void visualizeDistanceResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXi reprojectionMask, Eigen::MatrixXf nowDistMap );
+
+
 
 
     //
@@ -174,7 +177,7 @@ private:
 
 
     //
-    // Forward formulation related function (8th July, 2015)
+    // Forward formulation (distance energy function) related function (8th July, 2015)
     // selectedPts //< already declared above
     std::vector<SpaceCordList> _ref_edge_3d; ///< Stores the edge points of the reference frame in 3d ie. `E_i`
     std::vector<ImCordList> _ref_edge_2d; ///< Stores edge image co-ordinates (2d) ie. `e_i`
@@ -221,6 +224,7 @@ private:
     float grad_thresh;
     float ratio_of_visible_pts_thresh; //should be between [0, 1]
     float laplacianThreshExitCond; //set this to typically 15-20
+    float psiNormTerminationThreshold; //terminate iteration if norm of psi falls below this value
 
 
 

@@ -11,6 +11,8 @@
 #ifndef ___RGB_ODOMETRY_H___
 #define ___RGB_ODOMETRY_H___
 
+#define EIGEN_DONT_PARALLELIZE
+
 #include <ros/ros.h>
 #include <ros/console.h>
 
@@ -44,6 +46,7 @@
 //#define GRAD_NORM( A, B ) fabs(A)
 
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+//#define __ENABLE_DISPLAY__ //display in loop()
 
 #define __COLLECT_EPSILON_DEBUG__DATA_
 #define _IGNORE__NEAR_PTS_DISPLAY____

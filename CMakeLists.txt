@@ -94,7 +94,7 @@ catkin_package(
 ###########
 ## Build ##
 ###########
-set(CMAKE_CXX_FLAGS "-fpermissive")
+set(CMAKE_CXX_FLAGS "-fpermissive -fopenmp")
 
 # CUDA flags
 # help - http://choorucode.com/2013/09/13/how-to-build-cuda-programs-using-cmake/

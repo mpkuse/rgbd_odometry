@@ -86,7 +86,7 @@ void SolveDVO::setCameraMatrix(const char *calibFile)
 
 
 /// @brief Display an Eigen::MatrixXd as an image (using opencv imshow())
-void SolveDVO::imshowEigenImage(const char *winName, Eigen::MatrixXd eim)
+void SolveDVO::imshowEigenImage(const char *winName, Eigen::MatrixXd& eim)
 {
     cv::Mat tmp, tmpuint;
     cv::eigen2cv( eim, tmp );
@@ -96,7 +96,7 @@ void SolveDVO::imshowEigenImage(const char *winName, Eigen::MatrixXd eim)
 }
 
 /// @brief Display an Eigen::MatrixXf as an image (using opencv imshow())
-void SolveDVO::imshowEigenImage(const char *winName, Eigen::MatrixXf eim)
+void SolveDVO::imshowEigenImage(const char *winName, Eigen::MatrixXf& eim)
 {
     cv::Mat tmp, tmpuint;
     cv::eigen2cv( eim, tmp );
@@ -150,7 +150,7 @@ bool SolveDVO::loadFromFile(const char *xmlFileName)
 
 /// @brief Prints nowIndex and LastRef index to scratch image. __DEBUG__
 /// @param[in] cleanScratch : false indicate that overwrite board. True indicates that need to clean board
-void SolveDVO::printFrameIndex2Scratch(cv::Mat scratch, long nowIndx, long lastRef, double time4Jacobian, double time4Iteration, bool cleanScratch=true)
+void SolveDVO::printFrameIndex2Scratch(cv::Mat &scratch, long nowIndx, long lastRef, double time4Jacobian, double time4Iteration, bool cleanScratch=true)
 {
     if( cleanScratch )
         scratch = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
@@ -296,10 +296,10 @@ void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::
 
 
     // grad of dist transform
-    Eigen::MatrixXf dGx, dGy; //image gradient
+//    Eigen::MatrixXf dGx, dGy; //image gradient
 //    imageGradient(_nowDist, dGx, dGy);
-    dGx = now_DT_gradientX[level];
-    dGy = now_DT_gradientY[level];
+    Eigen::MatrixXf dGx = now_DT_gradientX[level];
+    Eigen::MatrixXf dGy = now_DT_gradientY[level];
 
 
     SpaceCordList _3d = _ref_edge_3d[level];
@@ -386,8 +386,9 @@ void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::
         Jcbian.block<1,6>(i,0) = J_i;
     }
 
-
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
     ROS_INFO( "Jacobians computed at %d of %d edge locations", _3d.cols() - notJ, _3d.cols() );
+#endif
 
 }
 
@@ -410,7 +411,9 @@ void SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections,
         epsilon(i) = _nowDist( reprojections(1,i), reprojections(0,i) );
         weights(i) = getWeightOf( epsilon(i) );
     }
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
     ROS_INFO( "Epsilon computed at %d of %d reprojected points", reprojections.cols()-notJ,reprojections.cols());
+#endif
 
     float ratio_of_visible_pts = (float)(reprojections.cols()-notJ) / (float)reprojections.cols();
     if( ratio_of_visible_pts < ratio_of_visible_pts_thresh )
@@ -679,7 +682,7 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
 */
 
 
-void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons, Eigen::MatrixXf& finalReprojections)
+void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons, Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex)
 {
 
     assert( level >= 0 && level <= 3 );
@@ -706,10 +709,12 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
     Eigen::VectorXf bestEpsilon;
     Eigen::MatrixXf bestReprojections;
 
-    float lambda = 10000.0;
+    float lambda = 1.0E10    ;
     for( int itr=0 ; itr< maxIterations ; itr++ ) {
 
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         ROS_INFO( "== Iteration %d ==", itr );
+#endif
 
 
         //
@@ -722,7 +727,9 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         computeJacobianOfNowFrame( level, cR, cT, Jcbian, reprojections );
 
 
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         ROS_INFO( "size of reprojection : %d %d", reprojections.rows(), reprojections.cols() );
+#endif
 
 
         //
@@ -732,7 +739,9 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         getReprojectedEpsilons( level, reprojections, epsilon, weights );
         float currentTotalEpsilon = epsilon.sum() ;
         energyAtEachIteration[itr] = currentTotalEpsilon;
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         ROS_INFO( "#%d : Total Epsilon : %f", itr, currentTotalEpsilon );
+#endif
 
         // store the best epsilon
         if( currentTotalEpsilon < bestTotalEpsilon )
@@ -744,18 +753,26 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
             bestEpsilon = epsilon;
             bestReprojections = reprojections;
         }
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         ROS_INFO( "Best iteration so far is #%d. Total epsilon : %f", bestItrNumber, bestTotalEpsilon );
+#endif
+
 
 
         //
         // Update Marqt parameter (lambda)
         if( prevTotalEpsilon < epsilon.sum() ){ //divergence
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
             ROS_INFO( "DIVERGENCE => Increase lambda");
+#endif
             lambda *= 3.0;
         }
         else
             lambda /= 1.5;
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         ROS_INFO( "Lambda = %f", lambda );
+#endif
+
 
         prevTotalEpsilon = epsilon.sum();
 
@@ -770,8 +787,10 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         Eigen::MatrixXf b = -JTW * epsilon;
 
         Eigen::VectorXf psi = A.colPivHouseholderQr().solve(b);
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         //ROS_INFO_STREAM( "psi : [ "<< psi.transpose() << "]\n"<< "|psi| : "<< psi.norm() );
         ROS_INFO_STREAM( "|psi| : "<< psi.norm() );
+#endif
 
 
 
@@ -823,6 +842,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 
         processResidueHistogram( epsilon, false );
+        visualizeEnergyProgress( energyAtEachIteration, bestItrNumber );
 
 
         char ch = cv::waitKey(0);
@@ -848,9 +868,11 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
     cT = bestcT;
     finalEpsilons = bestEpsilon;
     finalReprojections = bestReprojections;
+    bestEnergyIndex = bestItrNumber;
 
 
 
+    ROS_INFO( "Best Energy Achieved (%f) in iteration #%d ", bestTotalEpsilon, bestItrNumber );
     ROS_DEBUG_STREAM( "final R :\n"<< cR );
     ROS_DEBUG_STREAM( "final T :\n"<< cT.transpose() );
     ROS_INFO("-*-*-*-*- End of Gauss-Newton Iterations (level=%d) -*-*-*-*- ", level );
@@ -1323,7 +1345,7 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
 /// @param[in] residi : Residue at pixel location. Nx1
 /// @param[in] quite : `true` will suppress the display. By default the display is off
 /// @note : This is customized to show integer valued bins only. 0 to 200 on x-axis. 0 to 2500 on y-axis
-void SolveDVO::processResidueHistogram(Eigen::VectorXf residi, bool quite=true)
+void SolveDVO::processResidueHistogram(Eigen::VectorXf& residi, bool quite=true)
 {
     // computation of histogram
     Eigen::VectorXf histogram = Eigen::VectorXf::Zero(260);
@@ -1407,7 +1429,7 @@ void SolveDVO::processResidueHistogram(Eigen::VectorXf residi, bool quite=true)
     }
 }
 
-void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf residueAt)
+void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf &eim, Eigen::MatrixXf &residueAt)
 {
     assert( (eim.rows() == residueAt.rows()) && "Image and mask rows must match");
     assert( (eim.cols() == residueAt.cols()) && "Image and mask cols must match");
@@ -1450,7 +1472,7 @@ void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXf resi
 }
 
 
-void SolveDVO::visualizeDistanceResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXi reprojectionMask, Eigen::MatrixXf nowDistMap )
+void SolveDVO::visualizeDistanceResidueHeatMap(Eigen::MatrixXf &eim, Eigen::MatrixXi &reprojectionMask, Eigen::MatrixXf &nowDistMap )
 {
     assert( (eim.rows() == reprojectionMask.rows()) && "Image and mask rows must match");
     assert( (eim.cols() == reprojectionMask.cols()) && "Image and mask cols must match");
@@ -1499,8 +1521,53 @@ void SolveDVO::visualizeDistanceResidueHeatMap(Eigen::MatrixXf eim, Eigen::Matri
 
 }
 
+void SolveDVO::visualizeEnergyProgress(Eigen::VectorXf energyAtEachIteration, int bestEnergyIndex, int XSPACING )
+{
+    assert( energyAtEachIteration.rows() > 0 );
 
-void SolveDVO::visualizeReprojectedDepth(Eigen::MatrixXf eim, Eigen::MatrixXf reprojDepth)
+    int len = energyAtEachIteration.rows();
+    float min = energyAtEachIteration.minCoeff();
+    float max = energyAtEachIteration.maxCoeff();
+    cv::Mat energyPlot = cv::Mat::zeros( 500, len*XSPACING + 40, CV_8UC3 ) + cv::Scalar(255,255,255);
+
+    // draw axes
+    cv::line( energyPlot, cv::Point(20,0), cv::Point(20,energyPlot.rows), cv::Scalar(0,0,0) ); //y-axis
+    cv::line( energyPlot, cv::Point(0,energyPlot.rows-20), cv::Point(XSPACING*len+40, energyPlot.rows-20), cv::Scalar(0,0,0) ); //x-axis
+
+    // mark axes
+    for( int p=0 ; p<len ; p+=10 ) { // plot's x-axis
+        char str[40];
+        sprintf( str, "%d", p );
+        cv::circle( energyPlot, cv::Point(XSPACING*p+20, energyPlot.rows-20),2, cv::Scalar(0,0,255), -1 );
+        cv::putText( energyPlot, str, cv::Point(XSPACING*p+20, energyPlot.rows-10), cv::FONT_HERSHEY_COMPLEX_SMALL, .5, cv::Scalar(0,0,0));
+    }
+    for( float p=0.0 ; p<100000.0 ; p+=5000.0 ) {
+        char str[40];
+        sprintf( str, "%2.0fK", (int) p/1000.0 );
+        cv::circle( energyPlot, cv::Point(20,energyPlot.rows - 20 - p/200.0),2, cv::Scalar(0,0,255), -1);
+        cv::putText( energyPlot, str, cv::Point(3, energyPlot.rows - 25 - p/200.0), cv::FONT_HERSHEY_COMPLEX_SMALL, .5, cv::Scalar(0,0,0) );
+    }
+
+
+    // plot energy bars
+    for( int i=0 ; i<energyAtEachIteration.rows() ; i++ )
+    {
+        float energy = energyAtEachIteration(i);
+        cv::line( energyPlot, cv::Point(XSPACING*i+20, energyPlot.rows-20), cv::Point(XSPACING*i+20, energyPlot.rows - 20 - energy/200.0), cv::Scalar(255,0,0));
+    }
+
+    if( bestEnergyIndex >= 0 ) {
+    float energy = energyAtEachIteration(bestEnergyIndex);
+    cv::line( energyPlot, cv::Point(XSPACING*bestEnergyIndex+20, energyPlot.rows-20), cv::Point(XSPACING*bestEnergyIndex+20, energyPlot.rows - 20 - energy/200.0), cv::Scalar(0,255,0));
+    }
+
+
+
+    cv::imshow( "energy progress", energyPlot );
+}
+
+
+void SolveDVO::visualizeReprojectedDepth(Eigen::MatrixXf &eim, Eigen::MatrixXf &reprojDepth)
 {
     assert( (eim.rows() == reprojDepth.rows()) && "Image and mask rows must match");
     assert( (eim.cols() == reprojDepth.cols()) && "Image and mask cols must match");
@@ -1581,7 +1648,7 @@ void SolveDVO::computeDistTransfrmOfRef()
 
         double min, max;
         cv::minMaxLoc(refDistTransCvMat, &min, &max);
-        ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(refDistTransCvMat.type()) );
+        //ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(refDistTransCvMat.type()) );
         ///// END DISTANCE TRANSFORM
 
         Eigen::MatrixXf refDistTrans;
@@ -1639,7 +1706,7 @@ void SolveDVO::computeDistTransfrmOfNow()
 
         double min, max;
         cv::minMaxLoc(nowDistTransCvMat, &min, &max);
-        ROS_INFO_STREAM( "(Now)min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(nowDistTransCvMat.type()) );
+        //ROS_INFO_STREAM( "(Now)min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(nowDistTransCvMat.type()) );
         ///// END DISTANCE TRANSFORM
 
         Eigen::MatrixXf nowDistTrans;
@@ -1814,6 +1881,7 @@ void SolveDVO::loop()
     Eigen::VectorXf epsilonVec;
     Eigen::MatrixXf reprojections;
     Eigen::VectorXf energyAtEachIteration;
+    int bestEnergyIndex = -1;
 
 
 
@@ -1854,10 +1922,10 @@ void SolveDVO::loop()
             setNowFrame();
 
             ros::Time jstart = ros::Time::now();
-            //gaussNewtonIterations(3, 7, cR, cT );
-            //gaussNewtonIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections  );
-            //gaussNewtonIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections );
-            gaussNewtonIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections );
+            //gaussNewtonIterations(3, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
+            //gaussNewtonIterations(2, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex  );
+            //gaussNewtonIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
+            gaussNewtonIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();
             ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );
@@ -1886,6 +1954,8 @@ void SolveDVO::loop()
             cv::imshow( "reprojection with cR,cT (on now gray", outImGray);
             cv::imshow( "selected edges on ref", outRef);
             visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
+
+            visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex );
 
 
             processResidueHistogram( epsilonVec, false );
@@ -1923,6 +1993,7 @@ void SolveDVO::loop()
     }
 
 
+    ROS_INFO( "DONE...!" );
 
 }
 

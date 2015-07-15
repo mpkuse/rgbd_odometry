@@ -45,17 +45,15 @@
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
 
-//#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 //#define __ENABLE_DISPLAY__ //display in loop()
 
-#define __COLLECT_EPSILON_DEBUG__DATA_
-#define _IGNORE__NEAR_PTS_DISPLAY____
 
 
 #define __REPROJECTION_LEVEL 0
 
 
-#define __COMPUTE_GEOMETRIC_ERRORS
+
 
 
 
@@ -123,7 +121,7 @@ private:
     bool isJacobianComputed;
     //void computeJacobian();
     //void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
-    void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT, Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons, Eigen::MatrixXf& finalReprojections );
+    void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT, Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons, Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex );
     float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
 
@@ -140,9 +138,9 @@ private:
     void exponentialMap(Eigen::VectorXf &psi, Eigen::Matrix3f &outR, Eigen::Vector3f &outT);
     void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3b color);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
-    void processResidueHistogram( Eigen::VectorXf residi, bool quite );
-    void visualizeResidueHeatMap( Eigen::MatrixXf eim, Eigen::MatrixXf residueAt );
-    void visualizeReprojectedDepth( Eigen::MatrixXf eim, Eigen::MatrixXf reprojDepth );
+    void processResidueHistogram( Eigen::VectorXf &residi, bool quite );
+    void visualizeResidueHeatMap( Eigen::MatrixXf& eim, Eigen::MatrixXf& residueAt );
+    void visualizeReprojectedDepth( Eigen::MatrixXf& eim, Eigen::MatrixXf& reprojDepth );
 
 
     // debugging variable
@@ -168,17 +166,19 @@ private:
     std::vector<Eigen::MatrixXf> now_DT_gradientY;
     void computeDistTransfrmOfNow();
 
-    void visualizeDistanceResidueHeatMap(Eigen::MatrixXf eim, Eigen::MatrixXi reprojectionMask, Eigen::MatrixXf nowDistMap );
+    void visualizeDistanceResidueHeatMap(Eigen::MatrixXf& eim, Eigen::MatrixXi& reprojectionMask, Eigen::MatrixXf& nowDistMap );
+    void visualizeEnergyProgress( Eigen::VectorXf energyAtEachIteration, int bestEnergyIndex, int XSPACING=3 );
+
 
 
 
 
     //
     //other debuging functions
-    void imshowEigenImage(const char *winName, Eigen::MatrixXd eim);
-    void imshowEigenImage(const char *winName, Eigen::MatrixXf eim);
+    void imshowEigenImage(const char *winName, Eigen::MatrixXd& eim);
+    void imshowEigenImage(const char *winName, Eigen::MatrixXf& eim);
     bool loadFromFile( const char * xmlFileName );
-    void printFrameIndex2Scratch( cv::Mat scratch, long nowIndx, long lastRef, double time4Jacobian, double time4Iteration, bool cleanScratch  );
+    void printFrameIndex2Scratch( cv::Mat& scratch, long nowIndx, long lastRef, double time4Jacobian, double time4Iteration, bool cleanScratch  );
     std::string cvMatType2str(int type);
 
 
@@ -191,6 +191,7 @@ private:
     std::vector<Eigen::MatrixXi> _ref_roi_mask; ///< Reference selected edge points
 
 
+    // void gaussNewton <-- defined above
     void enlistRefEdgePts( int level, Eigen::MatrixXi &refEdgePtsMask, SpaceCordList& _3d, ImCordList& _2d );
     void preProcessRefFrame();
     void computeJacobianOfNowFrame( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, JacobianLongMatrix& Jcbian, Eigen::MatrixXf &reprojections );

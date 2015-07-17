@@ -45,7 +45,7 @@
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
 
-#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+//#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 //#define __ENABLE_DISPLAY__ //display in loop()
 
 
@@ -167,7 +167,7 @@ private:
     void computeDistTransfrmOfNow();
 
     void visualizeDistanceResidueHeatMap(Eigen::MatrixXf& eim, Eigen::MatrixXi& reprojectionMask, Eigen::MatrixXf& nowDistMap );
-    void visualizeEnergyProgress( Eigen::VectorXf energyAtEachIteration, int bestEnergyIndex, int XSPACING=3 );
+    void visualizeEnergyProgress( Eigen::VectorXf energyAtEachIteration, int bestEnergyIndex, int XSPACING=1 );
 
 
 

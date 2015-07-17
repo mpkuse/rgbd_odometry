@@ -709,7 +709,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
     Eigen::VectorXf bestEpsilon;
     Eigen::MatrixXf bestReprojections;
 
-    float lambda = 1.0E10    ;
+    float lambda = 3.0E7    ;
     for( int itr=0 ; itr< maxIterations ; itr++ ) {
 
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -769,6 +769,8 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         }
         else
             lambda /= 1.5;
+
+        //lambda = 3.0E15 * sqrt(itr+1);
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         ROS_INFO( "Lambda = %f", lambda );
 #endif
@@ -783,7 +785,11 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         for( int i=0 ; i<weights.rows() ; i++ )
             JTW.col(i) *= weights(i);
 
-        Eigen::MatrixXf A = JTW * Jcbian + lambda * Eigen::MatrixXf::Identity(6,6);
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+        ROS_INFO_STREAM( "A : "<<  JTW * Jcbian );
+#endif
+
+        Eigen::MatrixXf A = /*JTW * Jcbian +*/ lambda * Eigen::MatrixXf::Identity(6,6);
         Eigen::MatrixXf b = -JTW * epsilon;
 
         Eigen::VectorXf psi = A.colPivHouseholderQr().solve(b);
@@ -1646,8 +1652,8 @@ void SolveDVO::computeDistTransfrmOfRef()
         cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L1, 5 );
         cv::normalize(refDistTransCvMat, refDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
 
-        double min, max;
-        cv::minMaxLoc(refDistTransCvMat, &min, &max);
+//        double min, max;
+//        cv::minMaxLoc(refDistTransCvMat, &min, &max);
         //ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(refDistTransCvMat.type()) );
         ///// END DISTANCE TRANSFORM
 
@@ -1704,8 +1710,8 @@ void SolveDVO::computeDistTransfrmOfNow()
         cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L1, 5 );
         cv::normalize(nowDistTransCvMat, nowDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
 
-        double min, max;
-        cv::minMaxLoc(nowDistTransCvMat, &min, &max);
+//        double min, max;
+//        cv::minMaxLoc(nowDistTransCvMat, &min, &max);
         //ROS_INFO_STREAM( "(Now)min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(nowDistTransCvMat.type()) );
         ///// END DISTANCE TRANSFORM
 
@@ -1864,10 +1870,11 @@ void SolveDVO::loop()
 
     char frameFileName[50];
     //const char * folder = "xdump_right2left"; //hard dataset
-    const char * folder = "xdump_left2right";
+    //const char * folder = "xdump_left2right";
+    const char * folder = "xdump";
 
-    const int START = 33;
-    const int END = 83;
+    const int START = 1;
+    const int END = 700;
 
 
     long lastRefFrame=0;
@@ -1884,6 +1891,17 @@ void SolveDVO::loop()
     int bestEnergyIndex = -1;
 
 
+    // Pose of currently set Reference-frame (key frame)
+    Eigen::Matrix3f keyR = Eigen::Matrix3f::Identity();
+    Eigen::Vector3f keyT = Eigen::Vector3f::Zero();
+
+
+    // Pose of now frame in global frame of reference
+    Eigen::Matrix3f nR = Eigen::Matrix3f::Identity();
+    Eigen::Vector3f nT = Eigen::Vector3f::Zero();
+
+
+
 
     for( int iFrameNum = START; iFrameNum < END ; iFrameNum++ )
     {
@@ -1898,6 +1916,17 @@ void SolveDVO::loop()
 
         if( signalGetNewRefImage == true )
         {
+
+            if( iFrameNum > START ) {
+            // before changing the reference-frame estimate itz pose
+            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex  );
+            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
+            gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
+            }
+
+            keyR = nR;
+            keyT = nT;
+
             lastRefFrame = iFrameNum;
             setRefFrame();
 
@@ -1905,13 +1934,6 @@ void SolveDVO::loop()
 
             cR = Eigen::Matrix3f::Identity();
             cT = Eigen::Vector3f::Zero();
-
-
-//            ros::Time jstart = ros::Time::now();
-//            computeJacobian();
-//            ros::Duration jdur = ros::Time::now() - jstart;
-//            lastRefFrameComputeTime = jdur.toSec();
-
 
 
             signalGetNewRefImage = false;
@@ -1923,9 +1945,10 @@ void SolveDVO::loop()
 
             ros::Time jstart = ros::Time::now();
             //gaussNewtonIterations(3, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
-            //gaussNewtonIterations(2, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex  );
-            //gaussNewtonIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
-            gaussNewtonIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
+            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex  );
+            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
+            gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
+//            gaussNewtonIterations(0, 1300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();
             ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );
@@ -1934,6 +1957,8 @@ void SolveDVO::loop()
 
             processResidueHistogram( epsilonVec, true );
 
+            nT = keyT + keyR*cT;
+            nR = keyR*cR;
 
 
 #ifdef __ENABLE_DISPLAY__
@@ -1955,7 +1980,7 @@ void SolveDVO::loop()
             cv::imshow( "selected edges on ref", outRef);
             visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
 
-            visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex );
+            visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:2 );
 
 
             processResidueHistogram( epsilonVec, false );
@@ -1972,7 +1997,8 @@ void SolveDVO::loop()
             }
             //
             // END DISPLAY
-            publishPoseFinal(cR, cT);
+            //publishPoseFinal(cR, cT);
+            publishPoseFinal(nR, nT);
 #endif
 
 

@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
 )
 
+
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -158,8 +159,8 @@ add_executable(dvo
     src/dvo.cpp
     src/SolveDVO.cpp
     include/SolveDVO.h
-    src/FColorMap.cpp
     include/FColorMap.h
+    src/FColorMap.cpp
 )
 
 

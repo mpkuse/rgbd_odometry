@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   message_generation
 )
+find_package( message_generation )
 
 
 ## System dependencies are found with CMake's conventions
@@ -69,6 +70,8 @@ find_package(catkin REQUIRED COMPONENTS
 #   Action2.action
 # )
 
+add_message_files(DIRECTORY msg)
+
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
    DEPENDENCIES
@@ -90,12 +93,14 @@ catkin_package(
 #  LIBRARIES rgbd_odometry
 #  CATKIN_DEPENDS cv_bridge image_transport roscpp
 #  DEPENDS system_lib
+CATKIN_DEPENDS message_runtime
 )
+catkin_package(CATKIN_DEPENDS message_runtime)
 
 ###########
 ## Build ##
 ###########
-set(CMAKE_CXX_FLAGS "-g -fpermissive -fopenmp -ffast-math")
+set(CMAKE_CXX_FLAGS "-fpermissive -fopenmp -ffast-math")
 
 # CUDA flags
 # help - http://choorucode.com/2013/09/13/how-to-build-cuda-programs-using-cmake/
@@ -175,16 +180,31 @@ add_executable(imuTest
 )
 
 
+
+
 add_executable(imuDR
     src/imuDRMain.cpp
     src/ImuDeadReckon.cpp
     include/ImuDeadReckon.h
 )
 
+add_executable(camTopic2PublisherPyD
+    src/camTopic2PublisherPyD.cpp
+    include/FColorMap.h
+    src/FColorMap.cpp
+)
+
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
-# add_dependencies(rgbd_odometry_node rgbd_odometry_generate_messages_cpp)
+ add_dependencies(camTopic2PublisherPyD rgbd_odometry_generate_messages_cpp)
+ add_dependencies(dvo rgbd_odometry_generate_messages_cpp)
+ add_dependencies(pnp rgbd_odometry_generate_messages_cpp)
+ add_dependencies(rgbdSubsc rgbd_odometry_generate_messages_cpp)
+ add_dependencies(publisherPyd rgbd_odometry_generate_messages_cpp)
+ add_dependencies(publisher rgbd_odometry_generate_messages_cpp)
+
+
 
 ## Specify libraries to link a library or executable target against
  target_link_libraries(publisher
@@ -220,6 +240,11 @@ add_executable(imuDR
  )
 
  target_link_libraries(imuDR
+   ${catkin_LIBRARIES}
+ )
+
+
+ target_link_libraries(camTopic2PublisherPyD
    ${catkin_LIBRARIES}
  )
 

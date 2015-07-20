@@ -467,7 +467,7 @@ void SolveDVO::imageArrivedCallBack( rgbd_odometry::RGBDFramePydConstPtr msg )
             // retrive frames from message
             frame = cv_bridge::toCvCopy(msg->framergb[i], "bgr8")->image;
             framemono =  cv_bridge::toCvCopy(  msg->framemono[i], "mono8" )->image ;
-            dframe =  cv_bridge::toCvCopy(  msg->dframe[i], "mono16" )->image ;
+            dframe =  cv_bridge::toCvCopy(  msg->dframe[i] )->image ;
 
             dframe.setTo(1, (dframe==0) ); //to avoid zero depth
 
@@ -1301,7 +1301,7 @@ void SolveDVO::sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat& xim
 /// Given the Gx, Gy (Gradients), selects the interest points based on im grad.
 int SolveDVO::selectedPts(int level, Eigen::MatrixXi& roi)
 {
-    assert( isNowDistTransfrmAvailable );
+    assert( isRefDistTransfrmAvailable );
     Eigen::MatrixXi _refEdge = ref_edge_map[level];
     Eigen::MatrixXf _refDepth = dim_r[level];
 
@@ -1986,7 +1986,7 @@ void SolveDVO::loop()
             processResidueHistogram( epsilonVec, false );
 
 
-            char ch = cv::waitKey(0);
+            char ch = cv::waitKey(__ENABLE_DISPLAY__);
             if( ch == 27 ){ // ESC
                 ROS_ERROR( "ESC pressed quitting...");
                 exit(1);
@@ -1999,6 +1999,7 @@ void SolveDVO::loop()
             // END DISPLAY
             //publishPoseFinal(cR, cT);
             publishPoseFinal(nR, nT);
+            publishReferencePointCloud(1);
 #endif
 
 

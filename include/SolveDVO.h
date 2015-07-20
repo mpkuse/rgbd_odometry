@@ -33,7 +33,6 @@
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
 
-#include <rgbd_odometry/RGBDFrame.h>
 #include <rgbd_odometry/RGBDFramePyd.h>
 #include <sensor_msgs/PointCloud.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -46,7 +45,7 @@
 //#define GRAD_NORM( A, B ) fabs(A)
 
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
-//#define __ENABLE_DISPLAY__ //display in loop()
+#define __ENABLE_DISPLAY__  80 //display in loop()
 
 
 

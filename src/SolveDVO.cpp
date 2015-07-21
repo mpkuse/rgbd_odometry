@@ -12,6 +12,7 @@ SolveDVO::SolveDVO()
     isRefDistTransfrmAvailable = false;
 
     signalGetNewRefImage = true;
+    sprintf( signalGetNewRefImageMsg, "NO MSG");
 
 
     //
@@ -19,8 +20,8 @@ SolveDVO::SolveDVO()
     grad_thresh = 10; //this is currently not used
     rviz_frame_id = "denseVO";
     ratio_of_visible_pts_thresh = 0.8;
-    laplacianThreshExitCond = 2000.0f;
-    psiNormTerminationThreshold = 1.0E-4;
+    laplacianThreshExitCond = 10.0f;
+    psiNormTerminationThreshold = 1.0E-7;
 
 
 
@@ -405,6 +406,7 @@ void SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections,
     {
         if( reprojections(0,i)<0 || reprojections(0,i)>_nowDist.cols() ||  reprojections(1,i)<0 || reprojections(1,i)>_nowDist.rows()) {
             notJ++;
+            epsilon(i) = 250;
             continue;
         }
 
@@ -416,8 +418,11 @@ void SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections,
 #endif
 
     float ratio_of_visible_pts = (float)(reprojections.cols()-notJ) / (float)reprojections.cols();
-    if( ratio_of_visible_pts < ratio_of_visible_pts_thresh )
+    if( ratio_of_visible_pts < ratio_of_visible_pts_thresh ) {
+        //ROS_ERROR( "Only %.2f %% of tracked points visible. Required %.2f %%. Signal change of reference frame", ratio_of_visible_pts*100, ratio_of_visible_pts_thresh*100);
+        snprintf(signalGetNewRefImageMsg, 450, "Only %.2f %% of tracked points visible. Required %.2f %%. Signal change of reference frame", ratio_of_visible_pts*100, ratio_of_visible_pts_thresh*100 );
         signalGetNewRefImage = true;
+    }
 
 
 }
@@ -785,12 +790,17 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         for( int i=0 ; i<weights.rows() ; i++ )
             JTW.col(i) *= weights(i);
 
-#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
-        ROS_INFO_STREAM( "A : "<<  JTW * Jcbian );
-#endif
+
 
         Eigen::MatrixXf A = /*JTW * Jcbian +*/ lambda * Eigen::MatrixXf::Identity(6,6);
         Eigen::MatrixXf b = -JTW * epsilon;
+
+
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+        //ROS_INFO_STREAM( "A :\n[ "<<  JTW * Jcbian << " ]" );
+        ROS_INFO_STREAM( "b (-ve gradient dirn)\n[ "<< b.transpose() << " ]" );
+#endif
+
 
         Eigen::VectorXf psi = A.colPivHouseholderQr().solve(b);
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -800,6 +810,8 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 
 
+        //
+        // Early Termination ?
 //        if( psi.norm() < psiNormTerminationThreshold )
 //            break;
 
@@ -824,6 +836,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         cT = cR*xTrans + cT;
         cR = cR * xRot;
 
+        processResidueHistogram( epsilon, true );
 
 
 
@@ -848,7 +861,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 
         processResidueHistogram( epsilon, false );
-        visualizeEnergyProgress( energyAtEachIteration, bestItrNumber );
+        visualizeEnergyProgress( energyAtEachIteration, bestItrNumber, (energyAtEachIteration.rows() < 300)?4:2 );
 
 
         char ch = cv::waitKey(0);
@@ -1350,8 +1363,9 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
 /// @brief Compute and visualize histogram of the residues
 /// @param[in] residi : Residue at pixel location. Nx1
 /// @param[in] quite : `true` will suppress the display. By default the display is off
+/// @returns :
 /// @note : This is customized to show integer valued bins only. 0 to 200 on x-axis. 0 to 2500 on y-axis
-void SolveDVO::processResidueHistogram(Eigen::VectorXf& residi, bool quite=true)
+bool SolveDVO::processResidueHistogram(Eigen::VectorXf& residi, bool quite=true)
 {
     // computation of histogram
     Eigen::VectorXf histogram = Eigen::VectorXf::Zero(260);
@@ -1412,8 +1426,11 @@ void SolveDVO::processResidueHistogram(Eigen::VectorXf& residi, bool quite=true)
         b_cap += residi(i);
     }
     b_cap /= (residi.rows());
-    if( b_cap > laplacianThreshExitCond )
+    if( b_cap > laplacianThreshExitCond ) {
+        //ROS_ERROR( "Fitted laplacian b: %f. Laplacian b_thresh : %f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
+        snprintf( signalGetNewRefImageMsg, 450, "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
         signalGetNewRefImage = true;
+    }
 
 
     if( quite == false )
@@ -1636,7 +1653,7 @@ void SolveDVO::computeDistTransfrmOfRef()
     {
         Eigen::MatrixXf ref_t = im_r[lvl];
         ///// DISTANCE TRANSFORM of ref_t
-        ROS_INFO( "distance transform (level=%d)", lvl );
+        //ROS_INFO( "distance transform (level=%d)", lvl );
         cv::Mat refCvMat, refEdge, refDistTransCvMat;
         cv::eigen2cv( ref_t, refCvMat );
         // Sobel
@@ -1693,7 +1710,7 @@ void SolveDVO::computeDistTransfrmOfNow()
     {
         Eigen::MatrixXf now_t = im_n[lvl];
         ///// DISTANCE TRANSFORM of ref_t
-        ROS_INFO( "distance transform (level=%d)", lvl );
+        //ROS_INFO( "distance transform (level=%d)", lvl );
         cv::Mat nowCvMat, nowEdge, nowDistTransCvMat;
         cv::eigen2cv( now_t, nowCvMat );
 
@@ -1871,9 +1888,9 @@ void SolveDVO::loop()
     char frameFileName[50];
     //const char * folder = "xdump_right2left"; //hard dataset
     //const char * folder = "xdump_left2right";
-    const char * folder = "xdump";
+    const char * folder = "TUM_RGBD/fr1_xyz";
 
-    const int START = 1;
+    const int START = 140;
     const int END = 700;
 
 
@@ -1903,6 +1920,8 @@ void SolveDVO::loop()
 
 
 
+
+    ros::Rate rate(30);
     for( int iFrameNum = START; iFrameNum < END ; iFrameNum++ )
     {
 
@@ -1916,6 +1935,8 @@ void SolveDVO::loop()
 
         if( signalGetNewRefImage == true )
         {
+            ROS_INFO( "!! NEW REFERENCE FRAME !!");
+            ROS_INFO( "Reason : %s", signalGetNewRefImageMsg );
 
             if( iFrameNum > START ) {
             // before changing the reference-frame estimate itz pose
@@ -1945,7 +1966,7 @@ void SolveDVO::loop()
 
             ros::Time jstart = ros::Time::now();
             //gaussNewtonIterations(3, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
-            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex  );
+            //gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex  );
             gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
             gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
 //            gaussNewtonIterations(0, 1300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
@@ -1955,7 +1976,6 @@ void SolveDVO::loop()
 
         //}
 
-            processResidueHistogram( epsilonVec, true );
 
             nT = keyT + keyR*cT;
             nR = keyR*cR;
@@ -1984,6 +2004,11 @@ void SolveDVO::loop()
 
 
             processResidueHistogram( epsilonVec, false );
+            if( iFrameNum == START ) { //only attempt to move windows in 1st iteration
+            cv::moveWindow("reprojection with cR,cT (on now dist-tran", 800, 600 );
+            cv::moveWindow("reprojection with cR,cT (on now gray"     , 1150, 600 );
+            cv::moveWindow("selected edges on ref", 1500, 600 );
+            }
 
 
             char ch = cv::waitKey(__ENABLE_DISPLAY__);
@@ -1998,26 +2023,17 @@ void SolveDVO::loop()
             //
             // END DISPLAY
             //publishPoseFinal(cR, cT);
-            publishPoseFinal(nR, nT);
-            publishReferencePointCloud(1);
+
 #endif
 
+            publishPoseFinal(nR, nT);
+            publishReferencePointCloud(1);
 
-
-
-        //ros::Rate rate(30);
-        //while( ros::ok() )
-        {
             ros::spinOnce();
-            //publishCurrentPointCloud();
-            //publishPointCloud( _spCord[0], _intensities[0] );
 
-
-
-            //    cv::waitKey(3);
-            //    rate.sleep();
-        }
+            rate.sleep();
     }
+
 
 
     ROS_INFO( "DONE...!" );

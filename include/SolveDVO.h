@@ -44,8 +44,8 @@
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
 
-//#define __SHOW_REPROJECTIONS_EACH_ITERATION__
-#define __ENABLE_DISPLAY__  80 //display in loop()
+#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+#define __ENABLE_DISPLAY__   //display in loop()
 
 
 
@@ -128,6 +128,7 @@ private:
     int selectedPts(int level, Eigen::MatrixXi &roi);
 
     bool signalGetNewRefImage;
+    char signalGetNewRefImageMsg[500];
 
 
     // helpers
@@ -137,7 +138,7 @@ private:
     void exponentialMap(Eigen::VectorXf &psi, Eigen::Matrix3f &outR, Eigen::Vector3f &outT);
     void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3b color);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
-    void processResidueHistogram( Eigen::VectorXf &residi, bool quite );
+    bool processResidueHistogram( Eigen::VectorXf &residi, bool quite );
     void visualizeResidueHeatMap( Eigen::MatrixXf& eim, Eigen::MatrixXf& residueAt );
     void visualizeReprojectedDepth( Eigen::MatrixXf& eim, Eigen::MatrixXf& reprojDepth );
 

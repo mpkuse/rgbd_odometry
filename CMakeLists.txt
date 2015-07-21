@@ -100,7 +100,7 @@ catkin_package(CATKIN_DEPENDS message_runtime)
 ###########
 ## Build ##
 ###########
-set(CMAKE_CXX_FLAGS "-fpermissive -fopenmp -ffast-math")
+set(CMAKE_CXX_FLAGS "-fpermissive -ffast-math")
 
 # CUDA flags
 # help - http://choorucode.com/2013/09/13/how-to-build-cuda-programs-using-cmake/

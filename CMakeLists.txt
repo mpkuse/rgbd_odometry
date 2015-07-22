@@ -166,6 +166,8 @@ add_executable(dvo
     include/SolveDVO.h
     include/FColorMap.h
     src/FColorMap.cpp
+    include/MentisVisualHandle.h
+    src/MentisVisualHandle.cpp
 )
 
 

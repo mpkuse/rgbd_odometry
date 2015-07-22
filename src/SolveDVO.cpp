@@ -18,7 +18,6 @@ SolveDVO::SolveDVO()
     //
     // Setting up some global constants
     grad_thresh = 10; //this is currently not used
-    rviz_frame_id = "denseVO";
     ratio_of_visible_pts_thresh = 0.8;
     laplacianThreshExitCond = 10.0f;
     psiNormTerminationThreshold = 1.0E-7;
@@ -31,11 +30,11 @@ SolveDVO::SolveDVO()
     //sub = nh.subscribe( "odometry/rgbd", 2, &SolveDVO::imageArrivedCallBack, this );
     sub = nh.subscribe( "Xtion/rgbdPyramid", 10, &SolveDVO::imageArrivedCallBack, this );
 
-    pub_pc = nh.advertise<sensor_msgs::PointCloud>( "dvo/pointCloud", 1 );
-    pub_final_pose = nh.advertise<geometry_msgs::PoseStamped>( "dvo/finalPose", 1 );
-    pub_pose_wrt_ref = nh.advertise<geometry_msgs::PoseStamped>( "dvo/poseWrtRef", 1 );
 
-
+    //
+    // Visualization Class
+    mviz.setNodeHandle(this); //this call also setups the publisher
+    mviz.setRVizFrameID("denseVO");
 
 }
 
@@ -2063,28 +2062,39 @@ void SolveDVO::loop()
             cv::moveWindow("selected edges on ref", 1500, 600 );
             }
 
+            }
 
+            //
+            // END DISPLAY
+
+#endif
+
+
+            //
+            // Publishing to RVIZ
+            //publishPoseFinal(nR, nT);
+            //publishReferencePointCloud(1);
+            mviz.incrementalSphere();
+            mviz.publishCurrentPointCloud(1);
+
+
+
+            ros::spinOnce();
+            rate.sleep();
+
+
+
+            //
+            // OpenCV WaitKey()
+#ifdef __ENABLE_DISPLAY__
             char ch = cv::waitKey(__ENABLE_DISPLAY__);
             if( ch == 27 ){ // ESC
                 ROS_ERROR( "ESC pressed quitting...");
                 exit(1);
             }
-            if( ch == 'b')
-                break;
 
-            }
-            //
-            // END DISPLAY
-            //publishPoseFinal(cR, cT);
+#endif //__ENABLE_DISPLAY__
 
-#endif
-
-            publishPoseFinal(nR, nT);
-            publishReferencePointCloud(1);
-
-            ros::spinOnce();
-
-            rate.sleep();
     }
 
 
@@ -2095,7 +2105,7 @@ void SolveDVO::loop()
 
 
 
-
+/*
 void SolveDVO::publishBowl()
 {
     sensor_msgs::PointCloud pcl_msg;
@@ -2286,6 +2296,7 @@ void SolveDVO::matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_
     rospose.orientation.z = quat.z();
     rospose.orientation.w = quat.w();
 }
+*/
 
 
 

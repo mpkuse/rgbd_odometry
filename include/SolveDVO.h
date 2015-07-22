@@ -34,17 +34,17 @@
 #include <image_transport/image_transport.h>
 
 #include <rgbd_odometry/RGBDFramePyd.h>
-#include <sensor_msgs/PointCloud.h>
-#include <geometry_msgs/PoseStamped.h>
+
 
 
 #include <FColorMap.h>
+#include <MentisVisualHandle.h>
 
 
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
 
-#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+//#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 #define __ENABLE_DISPLAY__   //display in loop()
 
 
@@ -71,6 +71,8 @@ typedef Eigen::Matrix<float, 1, 6> RowVector6f;
 /// Defines the class to handle streaming images and compute camera pose from RGBD images ie. dense visual odometry (DVO)
 class SolveDVO
 {
+    friend class MentisVisualHandle;
+
 public:
     SolveDVO();
     void loop();
@@ -208,12 +210,7 @@ private:
     ros::NodeHandle nh;
     ros::Subscriber sub;
 
-    ros::Publisher pub_pc; //point-cloud
-    ros::Publisher pub_final_pose; // final pose relative to first frame (ie. global frame)
-    ros::Publisher pub_pose_wrt_ref; //publish pose with respect to ref frame
-
-
-    char const * rviz_frame_id;
+    MentisVisualHandle mviz;
 
 
     //

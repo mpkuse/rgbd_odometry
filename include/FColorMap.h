@@ -1,3 +1,6 @@
+#ifndef ___FColorMap
+#define ___FColorMap
+
 /// @file Class defination of a false color map
 
 
@@ -15,3 +18,6 @@ public:
 private:
     std::vector<cv::Vec3b> colors;
 };
+
+
+#endif //___FColorMap

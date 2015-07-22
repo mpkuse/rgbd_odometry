@@ -1912,7 +1912,7 @@ void SolveDVO::loop()
     //const char * folder = "xdump_left2right";
     const char * folder = "TUM_RGBD/fr1_xyz";
 
-    const int START = 140;
+    const int START = 200;
     const int END = 700;
 
 
@@ -2074,8 +2074,10 @@ void SolveDVO::loop()
             // Publishing to RVIZ
             //publishPoseFinal(nR, nT);
             //publishReferencePointCloud(1);
-            mviz.incrementalSphere();
-            mviz.publishCurrentPointCloud(1);
+            //mviz.incrementalSphere();
+            //mviz.publishCurrentPointCloud(1);
+            mviz.publishPoseFinal(nR, nT);
+
 
 
 
@@ -2106,73 +2108,6 @@ void SolveDVO::loop()
 
 
 /*
-void SolveDVO::publishBowl()
-{
-    sensor_msgs::PointCloud pcl_msg;
-    pcl_msg.header.frame_id = rviz_frame_id;
-    pcl_msg.header.stamp = ros::Time::now();
-
-
-    for( float x=-100 ;  x<100 ; x+=1.0 )
-    {
-        for( float y=-100 ; y<100 ; y+=1.0 )
-        {
-            float z = x*x + 20*y*y;
-            geometry_msgs::Point32 pt;
-            pt.x = x;
-            pt.y = y;
-            pt.z = z;
-
-            pcl_msg.points.push_back(pt);
-        }
-    }
-    pub_pc.publish( pcl_msg );
-}
-
-
-void SolveDVO::publishCurrentPointCloud( int level )
-{
-    assert( isCameraIntrinsicsAvailable && isNowFrameAvailable );
-    assert( im_n.size() > 1 );
-
-
-    sensor_msgs::PointCloud pcl_msg;
-    pcl_msg.header.frame_id = rviz_frame_id;
-    pcl_msg.header.stamp = ros::Time::now();
-
-
-    float scaleFac = (float)pow(2,-level);
-    Eigen::MatrixXf& _im = this->im_n[level];
-    Eigen::MatrixXf& _dim = this->dim_n[level];
-
-    sensor_msgs::ChannelFloat32 shade;
-    shade.name = "intensity";
-
-
-    for( int yy=0 ; yy<_im.rows() ; yy++ )
-    {
-        for( int xx=0 ; xx<_im.cols() ; xx++ )
-        {
-            float Z = _dim(yy,xx);
-            if( Z < 10 )
-                continue;
-            float X = Z * (xx-scaleFac*cx) / (scaleFac*fx);
-            float Y = Z * (yy-scaleFac*cy) / (scaleFac*fy);
-
-            geometry_msgs::Point32 pt;
-            pt.x = X;
-            pt.y = Y;
-            pt.z = Z;
-
-            pcl_msg.points.push_back(pt);
-            shade.values.push_back( _im(yy,xx) );
-        }
-    }
-
-    pcl_msg.channels.push_back(shade);
-    pub_pc.publish( pcl_msg );
-}
-
 
 void SolveDVO::publishReferencePointCloud( int level )
 {
@@ -2217,47 +2152,8 @@ void SolveDVO::publishReferencePointCloud( int level )
     pub_pc.publish( pcl_msg );
 }
 
-void SolveDVO::publishPointCloud(SpaceCordList &spc, IntensityList& grays )
-{
-    assert( (spc.cols()>0)  &&  (spc.cols() == grays.rows())  && spc.rows()==3 );
-    sensor_msgs::PointCloud pcl_msg;
-    pcl_msg.header.frame_id = rviz_frame_id;
-    pcl_msg.header.stamp = ros::Time::now();
 
-    sensor_msgs::ChannelFloat32 shade;
-    shade.name = "intensity";
 
-    for( int i=0 ; i<grays.rows() ; i++ )
-    {
-        geometry_msgs::Point32 pt;
-        pt.x = spc(0,i);
-        pt.y = spc(1,i);
-        pt.z = spc(2,i);
-
-        pcl_msg.points.push_back(pt);
-        shade.values.push_back( grays(i) );
-
-    }
-    pcl_msg.channels.push_back(shade);
-    pub_pc.publish( pcl_msg );
-
-}
-
-/// @brief Publishes the pose of kth frame with respect to global frame (ie. 1st frame)
-/// Publishes to var `pub_final_pose`
-void SolveDVO::publishPoseFinal(Eigen::MatrixXf rot, Eigen::VectorXf tran)
-{
-    geometry_msgs::Pose rospose;
-    matrixToPose(rot, tran, rospose);
-
-    geometry_msgs::PoseStamped poseS;
-    poseS.header.frame_id = rviz_frame_id;
-    poseS.header.stamp = ros::Time::now();
-    poseS.pose = rospose;
-
-    pub_final_pose.publish( poseS );
-
-}
 
 
 /// @brief Publishes the pose of kth frame with respect to its ref frame
@@ -2278,24 +2174,7 @@ void SolveDVO::publishPoseWrtRef(Eigen::MatrixXf rot, Eigen::VectorXf tran)
 
 
 
-/// @brief Given the rotation and translation matrix convert to ros Pose representation
-/// @param[in] rot : 3x3 rotation matrix
-/// @param[in] trans : 3-vector representing translation
-/// @param[out] rosPose : geometry_msgs::Pose as output
-void SolveDVO::matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose)
-{
-    Eigen::Quaternionf quat(rot);
 
-
-
-    rospose.position.x = tran(0);
-    rospose.position.y = tran(1);
-    rospose.position.z = tran(2);
-    rospose.orientation.x = quat.x();
-    rospose.orientation.y = quat.y();
-    rospose.orientation.z = quat.z();
-    rospose.orientation.w = quat.w();
-}
 */
 
 

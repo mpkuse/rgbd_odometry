@@ -45,7 +45,7 @@
 //#define GRAD_NORM( A, B ) fabs(A)
 
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
-#define __ENABLE_DISPLAY__   //display in loop()
+#define __ENABLE_DISPLAY__   120 //display in loop()
 
 
 

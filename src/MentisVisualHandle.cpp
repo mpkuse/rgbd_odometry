@@ -115,6 +115,8 @@ void MentisVisualHandle::publishCurrentPointCloud( int level )
             pt.y = Y;
             pt.z = Z;
 
+            ROS_INFO_ONCE( "%.4f %.4f %.4f", X, Y, Z );
+
             pcl_msg.points.push_back(pt);
             shade.values.push_back( _im(yy,xx) );
         }
@@ -124,3 +126,45 @@ void MentisVisualHandle::publishCurrentPointCloud( int level )
     pub_pc.publish( pcl_msg );
 }
 
+
+
+
+/// @brief Publishes the pose of kth frame with respect to global frame (ie. 1st frame)
+/// Publishes to var `pub_final_pose`
+void MentisVisualHandle::publishPoseFinal(Eigen::Matrix3f &rot, Eigen::Vector3f &tran)
+{
+    geometry_msgs::Pose rospose;
+    matrixToPose(rot, tran, rospose);
+
+    ROS_INFO( "Publishing Pose : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f", rospose.orientation.x, rospose.orientation.y, rospose.orientation.z, rospose.orientation.w,
+                     rospose.position.x, rospose.position.y, rospose.position.z );
+
+    geometry_msgs::PoseStamped poseS;
+    poseS.header.frame_id = rviz_frame_id;
+    poseS.header.stamp = ros::Time::now();
+    poseS.pose = rospose;
+
+    pub_final_pose.publish( poseS );
+
+}
+
+
+
+/// @brief Given the rotation and translation matrix convert to ros Pose representation
+/// @param[in] rot : 3x3 rotation matrix
+/// @param[in] trans : 3-vector representing translation
+/// @param[out] rosPose : geometry_msgs::Pose as output
+void MentisVisualHandle::matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose)
+{
+    Eigen::Quaternionf quat(rot);
+
+
+
+    rospose.position.x = 1000.*tran(0);
+    rospose.position.y = 1000.*tran(1);
+    rospose.position.z = 1000.*tran(2);
+    rospose.orientation.x = quat.x();
+    rospose.orientation.y = quat.y();
+    rospose.orientation.z = quat.z();
+    rospose.orientation.w = quat.w();
+}

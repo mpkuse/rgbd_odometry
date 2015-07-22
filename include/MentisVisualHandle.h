@@ -19,6 +19,7 @@
 #include <sensor_msgs/PointCloud.h>
 #include <geometry_msgs/PoseStamped.h>
 
+#include <Eigen/Dense>
 
 class SolveDVO; //forward declaration of a friend class
 
@@ -32,6 +33,8 @@ public:
 
     void incrementalSphere();
     void publishCurrentPointCloud( int level );
+    void publishPoseFinal(Eigen::Matrix3f &rot, Eigen::Vector3f &tran);
+
 
 
 private:
@@ -51,6 +54,10 @@ private:
     ros::Publisher pub_final_pose; // final pose relative to first frame (ie. global frame)
     ros::Publisher pub_pose_wrt_ref; //publish pose with respect to ref frame
 
+
+
+    //helpers
+    void matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose);
 
 };
 

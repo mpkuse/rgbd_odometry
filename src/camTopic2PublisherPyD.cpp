@@ -19,8 +19,8 @@
 
 
 
-
-#define __ENABLE_IM_WRITE__
+//#define __ENABLE_DISPLAY
+//#define __ENABLE_IM_WRITE__
 //#define __ENABLE_VIDEO_WRITE__ //default is yuv
 //#define __FMT_Y4M__
 const char * outFolder = "xdump";
@@ -275,17 +275,13 @@ int main( int argc, char ** argv )
 
 
 
-    ros::Rate rate(30);
+    ros::Rate rate(60); //Loop a little aggresively.
     int nFrame=0;
     while( nh.ok() )
     {
         ros::spinOnce();
 
         if( isRGBRcvd && isDepthRcvd ) {
-            cv::imshow( "rgb", rgb );
-            //cv::imshow( "depth", depth );
-            falseColorDepth(depth16);
-
 
 
             //
@@ -317,6 +313,9 @@ int main( int argc, char ** argv )
             ROS_INFO_STREAM_THROTTLE( 5, "Processing Frame #"<< nFrame );
 
 
+            msg.framergb.clear();
+            msg.framemono.clear();
+            msg.dframe.clear();
 
             //
             // For each pyd-level
@@ -366,7 +365,15 @@ int main( int argc, char ** argv )
             }
 
             pub.publish(msg);
+            //unset the flags once this message is published. They will be activated again when new message arrives in the callback
+            isRGBRcvd=isDepthRcvd=false;
 
+
+#ifdef __ENABLE_DISPLAY
+            cv::imshow( "rgb", rgb );
+            //cv::imshow( "depth", depth );
+            falseColorDepth(depth16);
+#endif
 
 
 

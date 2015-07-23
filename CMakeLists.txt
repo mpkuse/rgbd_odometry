@@ -196,6 +196,10 @@ add_executable(camTopic2PublisherPyD
     src/FColorMap.cpp
 )
 
+add_executable( loadGTPath
+    src/loadGTPath.cpp
+)
+
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
@@ -248,6 +252,11 @@ add_executable(camTopic2PublisherPyD
 
  target_link_libraries(camTopic2PublisherPyD
    ${catkin_LIBRARIES}
+ )
+
+
+ target_link_libraries( loadGTPath
+    ${catkin_LIBRARIES}
  )
 
 #############

@@ -18,6 +18,7 @@
 #include <visualization_msgs/Marker.h>
 #include <sensor_msgs/PointCloud.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <nav_msgs/Path.h>
 
 #include <Eigen/Dense>
 
@@ -34,6 +35,7 @@ public:
     void incrementalSphere();
     void publishCurrentPointCloud( int level );
     void publishPoseFinal(Eigen::Matrix3f &rot, Eigen::Vector3f &tran);
+    void publishPath();
 
 
 
@@ -50,10 +52,15 @@ private:
     char const * rviz_frame_id; ///< RViz frameID
     ros::Publisher pub_inc_sp; ///< incremental sphere (testing)
 
-    ros::Publisher pub_pc; //point-cloud
-    ros::Publisher pub_final_pose; // final pose relative to first frame (ie. global frame)
-    ros::Publisher pub_pose_wrt_ref; //publish pose with respect to ref frame
+    ros::Publisher pub_pc; ///< point-cloud
+    ros::Publisher pub_final_pose; ///< final pose relative to first frame (ie. global frame)
+    ros::Publisher pub_pose_wrt_ref; ///< publish pose with respect to ref frame
+    ros::Publisher pub_path; ///< publish path (as evaluated by DVO)
 
+
+    //
+    // Past Pose Data
+    std::vector<geometry_msgs::PoseStamped> poseAry;
 
 
     //helpers

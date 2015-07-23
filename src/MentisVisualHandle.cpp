@@ -17,6 +17,9 @@ MentisVisualHandle::MentisVisualHandle()
 {
     isNodeHandleValid = false;
     rviz_frame_id = "denseVO"; //a default frameID
+
+    poseAry.reserve(2000);
+    poseAry.clear();
 }
 
 void MentisVisualHandle::setNodeHandle(SolveDVO *const dvoH )
@@ -34,6 +37,7 @@ void MentisVisualHandle::setNodeHandle(SolveDVO *const dvoH )
     pub_pc = dvoHandle->nh.advertise<sensor_msgs::PointCloud>( "dvo/pointCloud", 1 );
     pub_final_pose = dvoHandle->nh.advertise<geometry_msgs::PoseStamped>( "dvo/finalPose", 1 );
     pub_pose_wrt_ref = dvoHandle->nh.advertise<geometry_msgs::PoseStamped>( "dvo/poseWrtRef", 1 );
+    pub_path = dvoHandle->nh.advertise<nav_msgs::Path>("/dvo/path", 1 );
 
 }
 
@@ -143,9 +147,20 @@ void MentisVisualHandle::publishPoseFinal(Eigen::Matrix3f &rot, Eigen::Vector3f 
     poseS.header.frame_id = rviz_frame_id;
     poseS.header.stamp = ros::Time::now();
     poseS.pose = rospose;
+    poseAry.push_back(poseS);
 
     pub_final_pose.publish( poseS );
 
+}
+
+void MentisVisualHandle::publishPath()
+{
+    nav_msgs::Path pathMsg;
+    pathMsg.header.frame_id = rviz_frame_id;
+    pathMsg.header.stamp = ros::Time::now();
+    for( int i=0 ; i<poseAry.size() ; i++ )
+        pathMsg.poses.push_back(poseAry[i]);
+    pub_path.publish(pathMsg);
 }
 
 

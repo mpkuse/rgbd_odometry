@@ -45,7 +45,7 @@
 //#define GRAD_NORM( A, B ) fabs(A)
 
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
-#define __ENABLE_DISPLAY__   120 //display in loop()
+#define __ENABLE_DISPLAY__  90 //display in loop()
 
 
 
@@ -76,6 +76,7 @@ class SolveDVO
 public:
     SolveDVO();
     void loop();
+    void loopFromFile();
 
     void setCameraMatrix(const char* calibFile);
 

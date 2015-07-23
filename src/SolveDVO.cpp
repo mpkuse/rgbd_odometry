@@ -416,7 +416,7 @@ float SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections
     {
         if( reprojections(0,i)<0 || reprojections(0,i)>_nowDist.cols() ||  reprojections(1,i)<0 || reprojections(1,i)>_nowDist.rows()) {
             notJ++;
-            epsilon(i) = 250;
+            //epsilon(i) = 200;
             continue;
         }
 
@@ -753,7 +753,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         //       Get distances at points given by `reprojections` 2xN matrix
         Eigen::VectorXf epsilon, weights;
         float ratio_of_visible_pts = getReprojectedEpsilons( level, reprojections, epsilon, weights );
-        float currentTotalEpsilon = epsilon.sum() ;
+        float currentTotalEpsilon = epsilon.norm(); //epsilon.sum() ;
         energyAtEachIteration[itr] = currentTotalEpsilon;
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         ROS_INFO( "#%d : Total Epsilon : %f", itr, currentTotalEpsilon );
@@ -778,7 +778,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
         //
         // Update Marqt parameter (lambda)
-        if( prevTotalEpsilon < epsilon.sum() ){ //divergence
+        if( prevTotalEpsilon < currentTotalEpsilon ){ //divergence
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
             ROS_INFO( "DIVERGENCE => Increase lambda");
 #endif
@@ -793,7 +793,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 #endif
 
 
-        prevTotalEpsilon = epsilon.sum();
+        prevTotalEpsilon = currentTotalEpsilon;
 
 
         //
@@ -1778,8 +1778,7 @@ void SolveDVO::computeDistTransfrmOfNow()
 /// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
 void SolveDVO::loop()
 {
-/*
-
+    /*
     ros::Rate rate(30);
     long nFrame=0;
     long lastRefFrame=0;
@@ -1898,10 +1897,15 @@ void SolveDVO::loop()
         rate.sleep();
         nFrame++;
     }
+    */
+}
 
-*/
 
 
+/// @brief The event loop. Basically an ever running while with ros::spinOnce()
+/// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
+void SolveDVO::loopFromFile()
+{
 
 
 //    if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) )
@@ -1910,9 +1914,9 @@ void SolveDVO::loop()
     char frameFileName[50];
     //const char * folder = "xdump_right2left"; //hard dataset
     //const char * folder = "xdump_left2right";
-    const char * folder = "TUM_RGBD/fr1_xyz";
+    const char * folder = "TUM_RGBD/fr1_rpy";
 
-    const int START = 200;
+    const int START = 0;
     const int END = 700;
 
 
@@ -2077,6 +2081,7 @@ void SolveDVO::loop()
             //mviz.incrementalSphere();
             //mviz.publishCurrentPointCloud(1);
             mviz.publishPoseFinal(nR, nT);
+            mviz.publishPath();
 
 
 
@@ -2104,81 +2109,4 @@ void SolveDVO::loop()
     ROS_INFO( "DONE...!" );
 
 }
-
-
-
-/*
-
-void SolveDVO::publishReferencePointCloud( int level )
-{
-    assert( isCameraIntrinsicsAvailable && isRefFrameAvailable );
-    assert( im_n.size() > 1 );
-
-
-    sensor_msgs::PointCloud pcl_msg;
-    pcl_msg.header.frame_id = rviz_frame_id;
-    pcl_msg.header.stamp = ros::Time::now();
-
-
-    float scaleFac = (float)pow(2,-level);
-    Eigen::MatrixXf& _im = this->im_r[level];
-    Eigen::MatrixXf& _dim = this->dim_r[level];
-
-    sensor_msgs::ChannelFloat32 shade;
-    shade.name = "intensity";
-
-
-    for( int yy=0 ; yy<_im.rows() ; yy++ )
-    {
-        for( int xx=0 ; xx<_im.cols() ; xx++ )
-        {
-            float Z = _dim(yy,xx);
-            if( Z < 10 )
-                continue;
-            float X = Z * (xx-scaleFac*cx) / (scaleFac*fx);
-            float Y = Z * (yy-scaleFac*cy) / (scaleFac*fy);
-
-            geometry_msgs::Point32 pt;
-            pt.x = X;
-            pt.y = Y;
-            pt.z = Z;
-
-            pcl_msg.points.push_back(pt);
-            shade.values.push_back( _im(yy,xx) );
-        }
-    }
-
-    pcl_msg.channels.push_back(shade);
-    pub_pc.publish( pcl_msg );
-}
-
-
-
-
-
-/// @brief Publishes the pose of kth frame with respect to its ref frame
-/// Publishes to var `pub_final_pose`
-void SolveDVO::publishPoseWrtRef(Eigen::MatrixXf rot, Eigen::VectorXf tran)
-{
-    geometry_msgs::Pose rospose;
-    matrixToPose(rot, tran, rospose);
-    rospose.position.x += 500.0;
-
-    geometry_msgs::PoseStamped poseS;
-    poseS.header.frame_id = rviz_frame_id;
-    poseS.header.stamp = ros::Time::now();
-    poseS.pose = rospose;
-
-    pub_pose_wrt_ref.publish( poseS );
-}
-
-
-
-
-*/
-
-
-
-
-
 

@@ -8,9 +8,44 @@
 #include <nav_msgs/Path.h>
 #include <geometry_msgs/PoseStamped.h>
 
+#include <Eigen/Dense>
+
 using namespace std;
 
 char const * rviz_frame_id = "denseVO";
+
+
+void parseData( string& line, std::vector<float>& parsedData )
+{
+    stringstream ss(line);
+
+    parsedData.clear();
+
+    for( int i=0 ; i<8 ; i++ )  {
+        float tmp;
+        ss >> tmp;
+        parsedData.push_back(tmp);
+    }
+}
+
+
+/// @brief Given the rotation and translation matrix convert to ros Pose representation
+/// @param[in] rot : 3x3 rotation matrix
+/// @param[in] trans : 3-vector representing translation
+/// @param[out] rosPose : geometry_msgs::Pose as output
+void matrixToPose(Eigen::Matrix3f& rot, Eigen::Vector3f& tran, geometry_msgs::Pose& rospose)
+{
+    Eigen::Quaternionf quat(rot);
+
+    rospose.position.x = 1000.*tran(0);
+    rospose.position.y = 1000.*tran(1);
+    rospose.position.z = 1000.*tran(2);
+    rospose.orientation.x = quat.x();
+    rospose.orientation.y = quat.y();
+    rospose.orientation.z = quat.z();
+    rospose.orientation.w = quat.w();
+}
+
 
 int main( int argc, char ** argv )
 {
@@ -53,7 +88,14 @@ int main( int argc, char ** argv )
     /// nav_msgs::Path
     nav_msgs::Path pathMsg;
     pathMsg.header.frame_id = rviz_frame_id;
-    pathMsg.header.stamp = ros::Time::now();
+
+
+    std::vector<float> ln;
+    Eigen::Matrix3f Rf;  Eigen::Vector3f Tf; //rotation and translation of 1st frame (in world cord-system)
+    Eigen::Matrix3f Rc;  Eigen::Vector3f Tc; //rotation and translation of current frame (in world cord-system)
+    Eigen::Matrix3f Ru;  Eigen::Vector3f Tu; //rotation and translation of current frame (in frame of 1st frame)
+
+
 
     ros::Rate rate(100);
     while( getline(fin, line) && ros::ok() )
@@ -63,28 +105,52 @@ int main( int argc, char ** argv )
 
         if(line[0] == '#') continue;
 
-        float data[10];
 
-        stringstream ss(line);
+        parseData( line, ln );
 
-        for( int i=0 ; i<8 ; i++ )  {
-            ss >> data[i];
+        if( lineCount == 0 ) //register the 1st line. this is pose of the 1st frame which is my world-frame
+        {
+            Eigen::Quaternionf Qf(ln[7], ln[4], ln[5], ln[6]);
+            Rf = Qf.toRotationMatrix();
+            Tf(0) = ln[1];
+            Tf(1) = ln[2];
+            Tf(2) = ln[3];
         }
+
+        Eigen::Quaternionf Qc(ln[7], ln[4], ln[5], ln[6]);
+        Rc = Qc.toRotationMatrix();
+        Tc(0) = ln[1];
+        Tc(1) = ln[2];
+        Tc(2) = ln[3];
+
+
+        // compute [R,T] in system of 1st frame
+        Tu = Rf.transpose() * ( Tc - Tf );
+        Ru = Rf.transpose() * Rc;
+
+
+
+        // Get pose using Ru, Tu
+        geometry_msgs::Pose poseU;
+        matrixToPose( Ru, Tu, poseU );
+
+
+        ROS_INFO( ".");
+
+
+
 
         geometry_msgs::PoseStamped poseMsg;
         poseMsg.header.stamp = ros::Time::now(); //data[0];
         poseMsg.header.frame_id = rviz_frame_id;
-        poseMsg.pose.position.x = data[1];
-        poseMsg.pose.position.y = data[2];
-        poseMsg.pose.position.z = data[3];
-        poseMsg.pose.orientation.x = data[4];
-        poseMsg.pose.orientation.y = data[5];
-        poseMsg.pose.orientation.z = data[6];
-        poseMsg.pose.orientation.w = data[7];
+        poseMsg.pose = poseU;
 
         pub_pose.publish( poseMsg );
 
         pathMsg.poses.push_back(poseMsg);
+        pathMsg.header.stamp = ros::Time::now();
+
+        pub.publish( pathMsg );
 
 
 //        cout << "Data: " << data[5]  << endl;
@@ -98,7 +164,7 @@ int main( int argc, char ** argv )
         ros::spinOnce();
         rate.sleep();
     }
+    ROS_INFO( "Read %d lines", lineCount );
 
-    pub.publish( pathMsg );
     return 0;
 }

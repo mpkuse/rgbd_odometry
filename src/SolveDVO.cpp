@@ -1685,7 +1685,7 @@ void SolveDVO::computeDistTransfrmOfRef()
 
         // Canny
         refCvMat.convertTo(refCvMat, CV_8U);
-        cv::Canny( refCvMat, refEdge, 250, 50 );
+        cv::Canny( refCvMat, refEdge, 150, 100, 3, true );
         refEdge = 255 - refEdge;
 
         cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L1, 5 );
@@ -1743,7 +1743,7 @@ void SolveDVO::computeDistTransfrmOfNow()
 
         // Canny
         nowCvMat.convertTo(nowCvMat, CV_8U);
-        cv::Canny( nowCvMat, nowEdge, 250, 50 );
+        cv::Canny( nowCvMat, nowEdge, 150, 100, 3, true );
         nowEdge = 255 - nowEdge;
 
         cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L1, 5 );
@@ -2079,8 +2079,8 @@ void SolveDVO::loopFromFile()
             ros::Time jstart = ros::Time::now();
             //gaussNewtonIterations(3, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             //gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-            gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            //gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            gaussNewtonIterations(0, 200, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 //            gaussNewtonIterations(0, 1300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();

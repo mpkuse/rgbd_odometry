@@ -140,8 +140,17 @@ void MentisVisualHandle::publishPoseFinal(Eigen::Matrix3f &rot, Eigen::Vector3f 
     geometry_msgs::Pose rospose;
     matrixToPose(rot, tran, rospose);
 
+    float yaw, pitch, roll;
+    Eigen::Vector3f euler = rot.eulerAngles(2, 1, 0);
+    yaw = euler(0,0);
+    pitch = euler(1,0);
+    roll = euler(2,0);
+
+
     ROS_INFO( "Publishing Pose : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f", rospose.orientation.x, rospose.orientation.y, rospose.orientation.z, rospose.orientation.w,
                      rospose.position.x, rospose.position.y, rospose.position.z );
+    ROS_INFO( "Roll-Pitch-Yaw :  [ %f %f %f ] (camera POV)", roll, pitch, yaw );
+
 
     geometry_msgs::PoseStamped poseS;
     poseS.header.frame_id = rviz_frame_id;

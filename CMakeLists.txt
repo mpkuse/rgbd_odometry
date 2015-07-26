@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   message_generation
 )
+find_package( message_generation )
 
 
 ## System dependencies are found with CMake's conventions
@@ -69,6 +70,8 @@ find_package(catkin REQUIRED COMPONENTS
 #   Action2.action
 # )
 
+add_message_files(DIRECTORY msg)
+
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
    DEPENDENCIES
@@ -90,12 +93,14 @@ catkin_package(
 #  LIBRARIES rgbd_odometry
 #  CATKIN_DEPENDS cv_bridge image_transport roscpp
 #  DEPENDS system_lib
+CATKIN_DEPENDS message_runtime
 )
+catkin_package(CATKIN_DEPENDS message_runtime)
 
 ###########
 ## Build ##
 ###########
-set(CMAKE_CXX_FLAGS "-fpermissive")
+set(CMAKE_CXX_FLAGS "-fpermissive -ffast-math")
 
 # CUDA flags
 # help - http://choorucode.com/2013/09/13/how-to-build-cuda-programs-using-cmake/
@@ -161,6 +166,8 @@ add_executable(dvo
     include/SolveDVO.h
     include/FColorMap.h
     src/FColorMap.cpp
+    include/MentisVisualHandle.h
+    src/MentisVisualHandle.cpp
 )
 
 
@@ -179,6 +186,16 @@ add_executable(imuDR
     src/imuDRMain.cpp
     src/ImuDeadReckon.cpp
     include/ImuDeadReckon.h
+)
+
+add_executable(camTopic2PublisherPyD
+    src/camTopic2PublisherPyD.cpp
+    include/FColorMap.h
+    src/FColorMap.cpp
+)
+
+add_executable( loadGTPath
+    src/loadGTPath.cpp
 )
 
 
@@ -221,6 +238,16 @@ add_executable(imuDR
 
  target_link_libraries(imuDR
    ${catkin_LIBRARIES}
+ )
+
+
+ target_link_libraries(camTopic2PublisherPyD
+   ${catkin_LIBRARIES}
+ )
+
+
+ target_link_libraries( loadGTPath
+    ${catkin_LIBRARIES}
  )
 
 #############

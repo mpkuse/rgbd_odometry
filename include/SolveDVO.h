@@ -23,6 +23,7 @@
 #include <sophus/se3.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <Eigen/Sparse>
 #include <igl/repmat.h>
 
 #include <opencv2/highgui/highgui.hpp>
@@ -32,29 +33,27 @@
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
 
-#include <rgbd_odometry/RGBDFrame.h>
+
 #include <rgbd_odometry/RGBDFramePyd.h>
-#include <sensor_msgs/PointCloud.h>
-#include <geometry_msgs/PoseStamped.h>
+
 
 
 #include <FColorMap.h>
+#include <MentisVisualHandle.h>
 
 
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
 
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
-#define __ENABLE_DISPLAY__ //display in loop()
-
-#define __COLLECT_EPSILON_DEBUG__DATA_
-#define _IGNORE__NEAR_PTS_DISPLAY____
+#define __ENABLE_DISPLAY__  0 //display in loop()
+//#define __MINIMAL_DISPLAY
 
 
 #define __REPROJECTION_LEVEL 0
 
 
-#define __COMPUTE_GEOMETRIC_ERRORS
+
 
 
 
@@ -73,9 +72,12 @@ typedef Eigen::Matrix<float, 1, 6> RowVector6f;
 /// Defines the class to handle streaming images and compute camera pose from RGBD images ie. dense visual odometry (DVO)
 class SolveDVO
 {
+    friend class MentisVisualHandle;
+
 public:
     SolveDVO();
     void loop();
+    void loopFromFile();
 
     void setCameraMatrix(const char* calibFile);
 
@@ -122,7 +124,9 @@ private:
     bool isJacobianComputed;
     //void computeJacobian();
     //void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
-    void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT, Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons, Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex );
+    void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT,
+                                Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
+                                Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float & finalVisibleRatio );
     float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
 
@@ -130,6 +134,7 @@ private:
     int selectedPts(int level, Eigen::MatrixXi &roi);
 
     bool signalGetNewRefImage;
+    char signalGetNewRefImageMsg[500];
 
 
     // helpers
@@ -139,7 +144,7 @@ private:
     void exponentialMap(Eigen::VectorXf &psi, Eigen::Matrix3f &outR, Eigen::Vector3f &outT);
     void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3b color);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
-    void processResidueHistogram( Eigen::VectorXf &residi, bool quite );
+    float processResidueHistogram( Eigen::VectorXf &residi, bool quite );
     void visualizeResidueHeatMap( Eigen::MatrixXf& eim, Eigen::MatrixXf& residueAt );
     void visualizeReprojectedDepth( Eigen::MatrixXf& eim, Eigen::MatrixXf& reprojDepth );
 
@@ -196,7 +201,7 @@ private:
     void enlistRefEdgePts( int level, Eigen::MatrixXi &refEdgePtsMask, SpaceCordList& _3d, ImCordList& _2d );
     void preProcessRefFrame();
     void computeJacobianOfNowFrame( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, JacobianLongMatrix& Jcbian, Eigen::MatrixXf &reprojections );
-    void getReprojectedEpsilons( int level, Eigen::MatrixXf &reprojections, Eigen::VectorXf &epsilon, Eigen::VectorXf &W );
+    float getReprojectedEpsilons( int level, Eigen::MatrixXf &reprojections, Eigen::VectorXf &epsilon, Eigen::VectorXf &W );
 
     void cordList_2_mask( Eigen::MatrixXf& list, Eigen::MatrixXi &mask); //make sure mask is preallocated
 
@@ -207,12 +212,7 @@ private:
     ros::NodeHandle nh;
     ros::Subscriber sub;
 
-    ros::Publisher pub_pc; //point-cloud
-    ros::Publisher pub_final_pose; // final pose relative to first frame (ie. global frame)
-    ros::Publisher pub_pose_wrt_ref; //publish pose with respect to ref frame
-
-
-    char const * rviz_frame_id;
+    MentisVisualHandle mviz;
 
 
     //

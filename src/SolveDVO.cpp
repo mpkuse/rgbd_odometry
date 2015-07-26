@@ -12,15 +12,15 @@ SolveDVO::SolveDVO()
     isRefDistTransfrmAvailable = false;
 
     signalGetNewRefImage = true;
+    sprintf( signalGetNewRefImageMsg, "NO MSG");
 
 
     //
     // Setting up some global constants
     grad_thresh = 10; //this is currently not used
-    rviz_frame_id = "denseVO";
     ratio_of_visible_pts_thresh = 0.8;
-    laplacianThreshExitCond = 2000.0f;
-    psiNormTerminationThreshold = 1.0E-4;
+    laplacianThreshExitCond = 10.0f;
+    psiNormTerminationThreshold = 1.0E-7;
 
 
 
@@ -30,11 +30,12 @@ SolveDVO::SolveDVO()
     //sub = nh.subscribe( "odometry/rgbd", 2, &SolveDVO::imageArrivedCallBack, this );
     sub = nh.subscribe( "Xtion/rgbdPyramid", 10, &SolveDVO::imageArrivedCallBack, this );
 
-    pub_pc = nh.advertise<sensor_msgs::PointCloud>( "dvo/pointCloud", 1 );
-    pub_final_pose = nh.advertise<geometry_msgs::PoseStamped>( "dvo/finalPose", 1 );
-    pub_pose_wrt_ref = nh.advertise<geometry_msgs::PoseStamped>( "dvo/poseWrtRef", 1 );
+  
 
-
+    //
+    // Visualization Class
+    mviz.setNodeHandle(this); //this call also setups the publisher
+    mviz.setRVizFrameID("denseVO");
 
 }
 
@@ -287,17 +288,16 @@ void SolveDVO::preProcessRefFrame()
 }
 
 /// Computes Jacobian of now frame around cR, cT
-/// J = [ 2x1 grad of now distance ] x [ 2x3 projection jacobian ] x [ del_p / del_psi ]
 void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &cT, JacobianLongMatrix &Jcbian, Eigen::MatrixXf& reprojections)
 {
-    // J = [ 2x1 grad of now distance ] x [ 2x3 projection jacobian ] x [ del_p / del_psi ]
+    /// J_{at a pixel} = [ 2x1 grad of now distance ] x [ 2x3 projection jacobian ] x [ del_p / del_psi ]
 
     Eigen::MatrixXf _nowDist = now_distance_transform[level];
 
 
-    // grad of dist transform
-//    Eigen::MatrixXf dGx, dGy; //image gradient
-//    imageGradient(_nowDist, dGx, dGy);
+    /// "Step 1" : Gradient of dist transform image <br/>
+    //    Eigen::MatrixXf dGx, dGy; //image gradient
+    //    imageGradient(_nowDist, dGx, dGy);
     Eigen::MatrixXf dGx = now_DT_gradientX[level];
     Eigen::MatrixXf dGy = now_DT_gradientY[level];
 
@@ -309,12 +309,13 @@ void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::
     assert( _3d.cols() == _2d.cols() );
 
 
-    // transform 3d points to ref frame denoted by cR, cT
+    /// "Step 2" : Transform 3d points to ref frame denoted by cR, cT <br/>
     Eigen::MatrixXf cTRep;
     igl::repmat(cT,1,_3d.cols(),cTRep); // repeat cT col-wise (uses IGL library)
     SpaceCordList _3d_transformed = cR.transpose() * ( _3d - cTRep );
 
-    // corresponding reprojected pts
+    /// "Step 3" : Corresponding reprojected pts. Project the transformed 3d points onto the image.
+    /// This is done by de-homonegezing the equation (X/Z, Y/Z) followed by multiplication on K (camera intrinsic parameters)
     float scaleFac = (float)pow(2,-level);
     Eigen::Matrix3f scaleMatrix = Eigen::Matrix3f::Identity();
     scaleMatrix(0,0) = scaleFac;
@@ -327,6 +328,8 @@ void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::
 
     Eigen::MatrixXf _2d_reprojected = scaleMatrix * K * _3d_transformed;
     reprojections = _2d_reprojected;
+
+
 
     // declare variables
     Eigen::RowVector2f G;
@@ -341,7 +344,7 @@ void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::
 
 
 
-    // loop over each 3d/2d edge pt of the (cR,cT) frame of reference (ie. ref Transformed)
+    /// "Step 4" : Loop over each 3d/2d edge pt of the (cR,cT) frame of reference (ie. ref Transformed) to compute jacobian at those pts
     int notJ = 0;
     const int nCols = _nowDist.cols();
     const int nRows = _nowDist.rows();
@@ -388,12 +391,21 @@ void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::
 
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
     ROS_INFO( "Jacobians computed at %d of %d edge locations", _3d.cols() - notJ, _3d.cols() );
+    ROS_INFO( "[computeJacobianOfNowFrame()] Visibility ratio : %2.2f", (float)(_3d.cols()-notJ) / (float)_3d.cols());
 #endif
 
 }
 
 /// @brief Given the reprojection mask, get corresponding epsilons and also weight as a vector
-void SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections, Eigen::VectorXf& epsilon, Eigen::VectorXf &weights)
+/// Reads the epsilon (error) values at the reprojected location (not computed here). Errors-vals here are the
+/// distance-transform values of the now frame at reprojected locations
+/// @param[in] level : Pyramidal level [0-4]
+/// @param[in] reprojections : 3xN matrix
+/// @param[out] epsilon : Error (not squared) at every reprojected pt.
+/// @param[out] weights : corresponding weights (for solving equation with Huber norm)
+/// @returns : Ratio of visible points to the total points tracked
+/// \see computeJacobianOfNowFrame
+float SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections, Eigen::VectorXf& epsilon, Eigen::VectorXf &weights)
 {
     Eigen::MatrixXf _nowDist = now_distance_transform[level];
 
@@ -405,6 +417,7 @@ void SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections,
     {
         if( reprojections(0,i)<0 || reprojections(0,i)>_nowDist.cols() ||  reprojections(1,i)<0 || reprojections(1,i)>_nowDist.rows()) {
             notJ++;
+            //epsilon(i) = 200;
             continue;
         }
 
@@ -413,12 +426,13 @@ void SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections,
     }
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
     ROS_INFO( "Epsilon computed at %d of %d reprojected points", reprojections.cols()-notJ,reprojections.cols());
+    ROS_INFO( "[getReprojectedEpsilons()] Visibility ratio : %2.2f", (float)(reprojections.cols()-notJ) / (float)reprojections.cols());
 #endif
 
     float ratio_of_visible_pts = (float)(reprojections.cols()-notJ) / (float)reprojections.cols();
-    if( ratio_of_visible_pts < ratio_of_visible_pts_thresh )
-        signalGetNewRefImage = true;
 
+
+    return ratio_of_visible_pts;
 
 }
 
@@ -467,7 +481,7 @@ void SolveDVO::imageArrivedCallBack( rgbd_odometry::RGBDFramePydConstPtr msg )
             // retrive frames from message
             frame = cv_bridge::toCvCopy(msg->framergb[i], "bgr8")->image;
             framemono =  cv_bridge::toCvCopy(  msg->framemono[i], "mono8" )->image ;
-            dframe =  cv_bridge::toCvCopy(  msg->dframe[i], "mono16" )->image ;
+            dframe =  cv_bridge::toCvCopy(  msg->dframe[i] )->image ;
 
             dframe.setTo(1, (dframe==0) ); //to avoid zero depth
 
@@ -682,7 +696,9 @@ void SolveDVO::computeJacobian(int level, JacobianList& J, ImCordList& imC, Spac
 */
 
 
-void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons, Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex)
+void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix3f& cR, Eigen::Vector3f& cT,
+                                     Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
+                                     Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float& finalVisibleRatio)
 {
 
     assert( level >= 0 && level <= 3 );
@@ -703,6 +719,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
     float prevTotalEpsilon = 1.0E10;
 
     float bestTotalEpsilon = 1.0E10;
+    float bestRatioVisiblePts = 1.0f;
     Eigen::Matrix3f bestcR = Eigen::Matrix3f::Identity();
     Eigen::Vector3f bestcT = Eigen::Vector3f::Zero();
     int bestItrNumber = -1;
@@ -736,9 +753,9 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         // Get corresponding epsilons
         //       Get distances at points given by `reprojections` 2xN matrix
         Eigen::VectorXf epsilon, weights;
-        getReprojectedEpsilons( level, reprojections, epsilon, weights );
-        float currentTotalEpsilon = epsilon.sum() ;
-        energyAtEachIteration[itr] = currentTotalEpsilon;
+        float ratio_of_visible_pts = getReprojectedEpsilons( level, reprojections, epsilon, weights );
+        float currentTotalEpsilon = epsilon.norm(); //epsilon.sum() ;
+        energyAtEachIteration[itr] = 10.0*currentTotalEpsilon;
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         ROS_INFO( "#%d : Total Epsilon : %f", itr, currentTotalEpsilon );
 #endif
@@ -747,6 +764,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         if( currentTotalEpsilon < bestTotalEpsilon )
         {
             bestTotalEpsilon = currentTotalEpsilon;
+            bestRatioVisiblePts = ratio_of_visible_pts;
             bestcR = cR;
             bestcT = cT;
             bestItrNumber = itr;
@@ -761,7 +779,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
         //
         // Update Marqt parameter (lambda)
-        if( prevTotalEpsilon < epsilon.sum() ){ //divergence
+        if( prevTotalEpsilon < currentTotalEpsilon ){ //divergence
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
             ROS_INFO( "DIVERGENCE => Increase lambda");
 #endif
@@ -776,7 +794,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 #endif
 
 
-        prevTotalEpsilon = epsilon.sum();
+        prevTotalEpsilon = currentTotalEpsilon;
 
 
         //
@@ -785,12 +803,17 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         for( int i=0 ; i<weights.rows() ; i++ )
             JTW.col(i) *= weights(i);
 
-#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
-        ROS_INFO_STREAM( "A : "<<  JTW * Jcbian );
-#endif
+
 
         Eigen::MatrixXf A = /*JTW * Jcbian +*/ lambda * Eigen::MatrixXf::Identity(6,6);
         Eigen::MatrixXf b = -JTW * epsilon;
+
+
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+        //ROS_INFO_STREAM( "A :\n[ "<<  JTW * Jcbian << " ]" );
+        ROS_INFO_STREAM( "b (-ve gradient dirn)\n[ "<< b.transpose() << " ]" );
+#endif
+
 
         Eigen::VectorXf psi = A.colPivHouseholderQr().solve(b);
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -800,6 +823,8 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 
 
+        //
+        // Early Termination ?
 //        if( psi.norm() < psiNormTerminationThreshold )
 //            break;
 
@@ -817,17 +842,23 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         Eigen::Matrix3f xRot = Eigen::Matrix3f::Identity();
         Eigen::Vector3f xTrans = Eigen::Vector3f::Zero();
 
-
-
         Sophus::SE3f mat = Sophus::SE3f::exp(psi);
         xRot = mat.rotationMatrix();
         xTrans = mat.translation();
 
-
-
         cT = cR*xTrans + cT;
         cR = cR * xRot;
 
+
+#ifndef __SHOW_REPROJECTIONS_EACH_ITERATION__
+        processResidueHistogram( epsilon, true );
+#endif   //__SHOW_REPROJECTIONS_EACH_ITERATION__
+
+
+
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+        processResidueHistogram( epsilon, false );
+#endif   //__SHOW_REPROJECTIONS_EACH_ITERATION__
 
 
 
@@ -852,9 +883,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 
 
-
-        processResidueHistogram( epsilon, false );
-        visualizeEnergyProgress( energyAtEachIteration, bestItrNumber );
+        visualizeEnergyProgress( energyAtEachIteration, bestItrNumber, (energyAtEachIteration.rows() < 300)?4:2 );
 
 
         char ch = cv::waitKey(0);
@@ -881,10 +910,11 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
     finalEpsilons = bestEpsilon;
     finalReprojections = bestReprojections;
     bestEnergyIndex = bestItrNumber;
+    finalVisibleRatio = bestRatioVisiblePts;
 
 
 
-    ROS_INFO( "Best Energy Achieved (%f) in iteration #%d ", bestTotalEpsilon, bestItrNumber );
+    ROS_INFO( "Best Energy Achieved (%f) in iteration #%d with visibility-ratio of %2.2f", bestTotalEpsilon, bestItrNumber, finalVisibleRatio );
     ROS_DEBUG_STREAM( "final R :\n"<< cR );
     ROS_DEBUG_STREAM( "final T :\n"<< cT.transpose() );
     ROS_INFO("-*-*-*-*- End of Gauss-Newton Iterations (level=%d) -*-*-*-*- ", level );
@@ -1307,7 +1337,7 @@ void SolveDVO::sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat& xim
 /// Given the Gx, Gy (Gradients), selects the interest points based on im grad.
 int SolveDVO::selectedPts(int level, Eigen::MatrixXi& roi)
 {
-    assert( isNowDistTransfrmAvailable );
+    assert( isRefDistTransfrmAvailable );
     Eigen::MatrixXi _refEdge = ref_edge_map[level];
     Eigen::MatrixXf _refDepth = dim_r[level];
 
@@ -1356,9 +1386,12 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
 /// @brief Compute and visualize histogram of the residues
 /// @param[in] residi : Residue at pixel location. Nx1
 /// @param[in] quite : `true` will suppress the display. By default the display is off
+/// @returns : Return the `b` param of the MLE laplacian distribution
 /// @note : This is customized to show integer valued bins only. 0 to 200 on x-axis. 0 to 2500 on y-axis
-void SolveDVO::processResidueHistogram(Eigen::VectorXf& residi, bool quite=true)
+float SolveDVO::processResidueHistogram(Eigen::VectorXf& residi, bool quite=true)
 {
+    float toReturn_bCap=0.0f;
+
     // computation of histogram
     Eigen::VectorXf histogram = Eigen::VectorXf::Zero(260);
     for( int i=0 ; i<residi.rows() ; i++ )
@@ -1418,8 +1451,7 @@ void SolveDVO::processResidueHistogram(Eigen::VectorXf& residi, bool quite=true)
         b_cap += residi(i);
     }
     b_cap /= (residi.rows());
-    if( b_cap > laplacianThreshExitCond )
-        signalGetNewRefImage = true;
+    toReturn_bCap = b_cap;
 
 
     if( quite == false )
@@ -1439,6 +1471,8 @@ void SolveDVO::processResidueHistogram(Eigen::VectorXf& residi, bool quite=true)
 
         cv::imshow( "PDF of residues", histPlot );
     }
+
+    return toReturn_bCap;
 }
 
 void SolveDVO::visualizeResidueHeatMap(Eigen::MatrixXf &eim, Eigen::MatrixXf &residueAt)
@@ -1642,7 +1676,7 @@ void SolveDVO::computeDistTransfrmOfRef()
     {
         Eigen::MatrixXf ref_t = im_r[lvl];
         ///// DISTANCE TRANSFORM of ref_t
-        ROS_INFO( "distance transform (level=%d)", lvl );
+        //ROS_INFO( "distance transform (level=%d)", lvl );
         cv::Mat refCvMat, refEdge, refDistTransCvMat;
         cv::eigen2cv( ref_t, refCvMat );
         // Sobel
@@ -1652,7 +1686,7 @@ void SolveDVO::computeDistTransfrmOfRef()
 
         // Canny
         refCvMat.convertTo(refCvMat, CV_8U);
-        cv::Canny( refCvMat, refEdge, 250, 50 );
+        cv::Canny( refCvMat, refEdge, 150, 100, 3, true );
         refEdge = 255 - refEdge;
 
         cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L1, 5 );
@@ -1699,7 +1733,7 @@ void SolveDVO::computeDistTransfrmOfNow()
     {
         Eigen::MatrixXf now_t = im_n[lvl];
         ///// DISTANCE TRANSFORM of ref_t
-        ROS_INFO( "distance transform (level=%d)", lvl );
+        //ROS_INFO( "distance transform (level=%d)", lvl );
         cv::Mat nowCvMat, nowEdge, nowDistTransCvMat;
         cv::eigen2cv( now_t, nowCvMat );
 
@@ -1710,7 +1744,7 @@ void SolveDVO::computeDistTransfrmOfNow()
 
         // Canny
         nowCvMat.convertTo(nowCvMat, CV_8U);
-        cv::Canny( nowCvMat, nowEdge, 250, 50 );
+        cv::Canny( nowCvMat, nowEdge, 150, 100, 3, true );
         nowEdge = 255 - nowEdge;
 
         cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L1, 5 );
@@ -1745,10 +1779,30 @@ void SolveDVO::computeDistTransfrmOfNow()
 /// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
 void SolveDVO::loop()
 {
-/*
 
-
+    /*
+      // Dry Loop
+    long nFrame = 0;
     ros::Rate rate(30);
+    while( ros::ok() )
+    {
+        ros::spinOnce();
+        if( !(this->isFrameAvailable) )
+            continue;
+
+        imshowEigenImage( "current Frame", rcvd_framemono[0] );
+        cv::waitKey(1);
+//        char ch = cv::waitKey(__ENABLE_DISPLAY__);
+//        if( ch == 27 ){ // ESC
+//            ROS_ERROR( "ESC pressed quitting...");
+//            exit(1);
+//        }
+            rate.sleep();
+
+    }
+    */
+
+
     long nFrame=0;
     long lastRefFrame=0;
     double lastRefFrameComputeTime;
@@ -1774,8 +1828,11 @@ void SolveDVO::loop()
     Eigen::VectorXf epsilonVec;
     Eigen::MatrixXf reprojections;
     Eigen::VectorXf energyAtEachIteration;
+    int bestEnergyIndex = -1;
+    float visibleRatio = 0.0;
 
 
+    ros::Rate rate(30);
     while( ros::ok() )
     {
         ros::spinOnce();
@@ -1788,6 +1845,14 @@ void SolveDVO::loop()
         //if( (nFrame % 9000000) == 0 )
         if( signalGetNewRefImage == true )
         {
+
+            if( nFrame > 0 ) {
+                // before changing the reference-frame estimate itz pose
+                gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+                gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+                gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            }
+
 
             lastRefFrame = nFrame;
             setRefFrame();
@@ -1804,37 +1869,59 @@ void SolveDVO::loop()
             cR = Eigen::Matrix3f::Identity();
             cT = Eigen::Vector3f::Zero();
             signalGetNewRefImage = false;
+            sprintf( signalGetNewRefImageMsg, "" );
 
-            publishReferencePointCloud(1);
-            //publishPointCloud(_spCord[1], _intensities[1]);
         }
 
 
         setNowFrame();
-            ros::Time jstart = ros::Time::now();
-            gaussNewtonIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections  );
-            gaussNewtonIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections );
-            gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections );
-            ros::Duration jdur = ros::Time::now() - jstart;
-            gaussNewtonIterationsComputeTime = jdur.toSec();
+        ros::Time jstart = ros::Time::now();
+        gaussNewtonIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+        gaussNewtonIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        ros::Duration jdur = ros::Time::now() - jstart;
+        gaussNewtonIterationsComputeTime = jdur.toSec();
+        ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );
+
 
 
 
         nT = keyT + keyR*cT;
         nR = keyR*cR;
 
-        //publishBowl();
-        publishPoseFinal(nR, nT);
-        publishPoseWrtRef(cR, cT);
-//        publishCurrentPointCloud(2);
+
+
+        // This was a critical-patch. Fixed a critical bug. The exit conditions need to be checked on the f_best and not all the epsilons.
+        // Before this was done in gaussNewtonIteration which was obiviously not correct as it checkd the threshold for the last iteration
+        // and not the best iteration. Similar fix need to be done with %-visibility condition.
+#ifdef __ENABLE_DISPLAY__
+        float b_cap = processResidueHistogram( epsilonVec, false );
+#else
+        float b_cap = processResidueHistogram( epsilonVec, true );
+#endif //__ENABLE_DISPLAY__
+
+
+
+        if( b_cap > laplacianThreshExitCond ) {
+            ROS_ERROR( "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
+            snprintf( signalGetNewRefImageMsg, 450, "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
+            signalGetNewRefImage = true;
+        }
+
+
+        if( visibleRatio < ratio_of_visible_pts_thresh ) {
+            ROS_ERROR( "Only %.2f of tracked points visible. Required %.2f. Signal change of reference frame", visibleRatio, ratio_of_visible_pts_thresh);
+            snprintf(signalGetNewRefImageMsg, 450, "Only %.2f of tracked points visible. Required %.2f. Signal change of reference frame", visibleRatio, ratio_of_visible_pts_thresh );
+            signalGetNewRefImage = true;
+        }
 
 
 
 
-
+#ifdef __ENABLE_DISPLAY__
+        //
         //Debugging display of re-projected points
         {
-
 
             int xlevel = 0;
             Eigen::MatrixXi reprojectedMask = Eigen::MatrixXi::Zero(im_n[xlevel].rows(), im_n[xlevel].cols());
@@ -1851,27 +1938,60 @@ void SolveDVO::loop()
             visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
 
 
-            processResidueHistogram( epsilonVec, false );
-
-
-
-
             printFrameIndex2Scratch(debugScratchBoard, nFrame, lastRefFrame, lastRefFrameComputeTime, gaussNewtonIterationsComputeTime, true );
             cv::imshow( "scratBoard", debugScratchBoard );
-        cv::moveWindow("reprojected markers onto now-drame", 0, 400 );rs on the ref-frame", outImg2);
+
+            visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:2 );
 
 
 
-            cv::waitKey(3);
+            char ch = cv::waitKey(__ENABLE_DISPLAY__);
+            if( ch == 27 ){ // ESC
+                ROS_ERROR( "ESC pressed quitting...");
+                exit(1);
+            }
         }
+#endif
+
+
+#ifdef __MINIMAL_DISPLAY
+        int xlevel = 0;
+        Eigen::MatrixXi reprojectedMask = Eigen::MatrixXi::Zero(im_n[xlevel].rows(), im_n[xlevel].cols());
+        cordList_2_mask(reprojections, reprojectedMask);
+
+        cv::Mat outRef;
+        sOverlay(im_r[xlevel], ref_edge_map[xlevel], outRef, cv::Vec3b(0,0,255));
+        cv::imshow( "selected edges on ref", outRef);
+
+
+        visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
+        char ch = cv::waitKey(1);
+        if( ch == 27 ){ // ESC
+            ROS_ERROR( "ESC pressed quitting...");
+            exit(1);
+        }
+
+#endif //__MINIMAL_DISPLAY
+
+
+        mviz.publishPoseFinal(nR, nT);
+        mviz.publishPath();
+
+        isFrameAvailable = false; //this is put in place to process at-max the arrival rate.
 
         rate.sleep();
         nFrame++;
     }
 
-*/
+
+}
 
 
+
+/// @brief The event loop. Basically an ever running while with ros::spinOnce()
+/// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
+void SolveDVO::loopFromFile()
+{
 
 
 //    if( ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug) )
@@ -1880,9 +2000,9 @@ void SolveDVO::loop()
     char frameFileName[50];
     //const char * folder = "xdump_right2left"; //hard dataset
     //const char * folder = "xdump_left2right";
-    const char * folder = "xdump";
+    const char * folder = "TUM_RGBD/fr1_rpy";
 
-    const int START = 1;
+    const int START = 0;
     const int END = 700;
 
 
@@ -1898,6 +2018,7 @@ void SolveDVO::loop()
     Eigen::MatrixXf reprojections;
     Eigen::VectorXf energyAtEachIteration;
     int bestEnergyIndex = -1;
+    float visibleRatio = 0.0;
 
 
     // Pose of currently set Reference-frame (key frame)
@@ -1912,6 +2033,8 @@ void SolveDVO::loop()
 
 
 
+
+    ros::Rate rate(30);
     for( int iFrameNum = START; iFrameNum < END ; iFrameNum++ )
     {
 
@@ -1925,12 +2048,14 @@ void SolveDVO::loop()
 
         if( signalGetNewRefImage == true )
         {
+            ROS_INFO( "!! NEW REFERENCE FRAME !!");
+            ROS_INFO( "Reason : %s", signalGetNewRefImageMsg );
 
             if( iFrameNum > START ) {
             // before changing the reference-frame estimate itz pose
-            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex  );
-            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
-            gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
+            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             }
 
             keyR = nR;
@@ -1953,21 +2078,49 @@ void SolveDVO::loop()
             setNowFrame();
 
             ros::Time jstart = ros::Time::now();
-            //gaussNewtonIterations(3, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
-            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex  );
-            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
-            gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
-//            gaussNewtonIterations(0, 1300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex );
+            //gaussNewtonIterations(3, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            //gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+            //gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            gaussNewtonIterations(0, 200, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+//            gaussNewtonIterations(0, 1300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();
             ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );
 
         //}
 
-            processResidueHistogram( epsilonVec, true );
 
             nT = keyT + keyR*cT;
             nR = keyR*cR;
+
+
+
+            // This was a critical-patch. Fixed a critical bug. The exit conditions need to be checked on the f_best and not all the epsilons.
+            // Before this was done in gaussNewtonIteration which was obiviously not correct as it checkd the threshold for the last iteration
+            // and not the best iteration. Similar fix need to be done with %-visibility condition.
+#ifdef __ENABLE_DISPLAY__
+            float b_cap = processResidueHistogram( epsilonVec, false );
+#else
+            float b_cap = processResidueHistogram( epsilonVec, true );
+#endif //__ENABLE_DISPLAY__
+
+
+
+            if( b_cap > laplacianThreshExitCond ) {
+                ROS_ERROR( "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
+                snprintf( signalGetNewRefImageMsg, 450, "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
+                signalGetNewRefImage = true;
+            }
+
+
+            if( visibleRatio < ratio_of_visible_pts_thresh ) {
+                ROS_ERROR( "Only %.2f of tracked points visible. Required %.2f. Signal change of reference frame", visibleRatio, ratio_of_visible_pts_thresh);
+                snprintf(signalGetNewRefImageMsg, 450, "Only %.2f of tracked points visible. Required %.2f. Signal change of reference frame", visibleRatio, ratio_of_visible_pts_thresh );
+                signalGetNewRefImage = true;
+            }
+
+
+
 
 
 #ifdef __ENABLE_DISPLAY__
@@ -1993,241 +2146,56 @@ void SolveDVO::loop()
 
 
             processResidueHistogram( epsilonVec, false );
+            if( iFrameNum == START ) { //only attempt to move windows in 1st iteration
+            cv::moveWindow("reprojection with cR,cT (on now dist-tran", 800, 600 );
+            cv::moveWindow("reprojection with cR,cT (on now gray"     , 1150, 600 );
+            cv::moveWindow("selected edges on ref", 1500, 600 );
+            }
+
+            }
+
+            //
+            // END DISPLAY
+
+#endif
 
 
-            char ch = cv::waitKey(0);
+            //
+            // Publishing to RVIZ
+            //publishPoseFinal(nR, nT);
+            //publishReferencePointCloud(1);
+            //mviz.incrementalSphere();
+            //mviz.publishCurrentPointCloud(1);
+            mviz.publishPoseFinal(nR, nT);
+            mviz.publishPath();
+
+
+
+
+            ros::spinOnce();
+            rate.sleep();
+
+
+
+            //
+            // OpenCV WaitKey()
+#ifdef __ENABLE_DISPLAY__
+            char ch = cv::waitKey(__ENABLE_DISPLAY__);
             if( ch == 27 ){ // ESC
                 ROS_ERROR( "ESC pressed quitting...");
                 exit(1);
             }
-            if( ch == 'b')
-                break;
 
-            }
-            //
-            // END DISPLAY
-            //publishPoseFinal(cR, cT);
-            publishPoseFinal(nR, nT);
-#endif
+#endif //__ENABLE_DISPLAY__
 
-
-
-
-        //ros::Rate rate(30);
-        //while( ros::ok() )
-        {
-            ros::spinOnce();
-            //publishCurrentPointCloud();
-            //publishPointCloud( _spCord[0], _intensities[0] );
-
-
-
-            //    cv::waitKey(3);
-            //    rate.sleep();
-        }
     }
-
-
-    ROS_INFO( "DONE...!" );
-
-}
-
-
-
-
-void SolveDVO::publishBowl()
-{
-    sensor_msgs::PointCloud pcl_msg;
-    pcl_msg.header.frame_id = rviz_frame_id;
-    pcl_msg.header.stamp = ros::Time::now();
-
-
-    for( float x=-100 ;  x<100 ; x+=1.0 )
-    {
-        for( float y=-100 ; y<100 ; y+=1.0 )
-        {
-            float z = x*x + 20*y*y;
-            geometry_msgs::Point32 pt;
-            pt.x = x;
-            pt.y = y;
-            pt.z = z;
-
-            pcl_msg.points.push_back(pt);
-        }
-    }
-    pub_pc.publish( pcl_msg );
-}
-
 
 void SolveDVO::publishCurrentPointCloud( int level )
 {
     assert( isCameraIntrinsicsAvailable && isNowFrameAvailable );
     assert( im_n.size() > 1 );
 
-
-    sensor_msgs::PointCloud pcl_msg;
-    pcl_msg.header.frame_id = rviz_frame_id;
-    pcl_msg.header.stamp = ros::Time::now();
-
-
-    float scaleFac = (float)pow(2,-level);
-    Eigen::MatrixXf& _im = this->im_n[level];
-    Eigen::MatrixXf& _dim = this->dim_n[level];
-
-    sensor_msgs::ChannelFloat32 shade;
-    shade.name = "intensity";
-
-
-    for( int yy=0 ; yy<_im.rows() ; yy++ )
-    {
-        for( int xx=0 ; xx<_im.cols() ; xx++ )
-        {
-            float Z = _dim(yy,xx);
-            if( Z < 10 )
-                continue;
-            float X = Z * (xx-scaleFac*cx) / (scaleFac*fx);
-            float Y = Z * (yy-scaleFac*cy) / (scaleFac*fy);
-
-            geometry_msgs::Point32 pt;
-            pt.x = X;
-            pt.y = Y;
-            pt.z = Z;
-
-            pcl_msg.points.push_back(pt);
-            shade.values.push_back( _im(yy,xx) );
-        }
-    }
-
-    pcl_msg.channels.push_back(shade);
-    pub_pc.publish( pcl_msg );
-}
-
-
-void SolveDVO::publishReferencePointCloud( int level )
-{
-    assert( isCameraIntrinsicsAvailable && isRefFrameAvailable );
-    assert( im_n.size() > 1 );
-
-
-    sensor_msgs::PointCloud pcl_msg;
-    pcl_msg.header.frame_id = rviz_frame_id;
-    pcl_msg.header.stamp = ros::Time::now();
-
-
-    float scaleFac = (float)pow(2,-level);
-    Eigen::MatrixXf& _im = this->im_r[level];
-    Eigen::MatrixXf& _dim = this->dim_r[level];
-
-    sensor_msgs::ChannelFloat32 shade;
-    shade.name = "intensity";
-
-
-    for( int yy=0 ; yy<_im.rows() ; yy++ )
-    {
-        for( int xx=0 ; xx<_im.cols() ; xx++ )
-        {
-            float Z = _dim(yy,xx);
-            if( Z < 10 )
-                continue;
-            float X = Z * (xx-scaleFac*cx) / (scaleFac*fx);
-            float Y = Z * (yy-scaleFac*cy) / (scaleFac*fy);
-
-            geometry_msgs::Point32 pt;
-            pt.x = X;
-            pt.y = Y;
-            pt.z = Z;
-
-            pcl_msg.points.push_back(pt);
-            shade.values.push_back( _im(yy,xx) );
-        }
-    }
-
-    pcl_msg.channels.push_back(shade);
-    pub_pc.publish( pcl_msg );
-}
-
-void SolveDVO::publishPointCloud(SpaceCordList &spc, IntensityList& grays )
-{
-    assert( (spc.cols()>0)  &&  (spc.cols() == grays.rows())  && spc.rows()==3 );
-    sensor_msgs::PointCloud pcl_msg;
-    pcl_msg.header.frame_id = rviz_frame_id;
-    pcl_msg.header.stamp = ros::Time::now();
-
-    sensor_msgs::ChannelFloat32 shade;
-    shade.name = "intensity";
-
-    for( int i=0 ; i<grays.rows() ; i++ )
-    {
-        geometry_msgs::Point32 pt;
-        pt.x = spc(0,i);
-        pt.y = spc(1,i);
-        pt.z = spc(2,i);
-
-        pcl_msg.points.push_back(pt);
-        shade.values.push_back( grays(i) );
-
-    }
-    pcl_msg.channels.push_back(shade);
-    pub_pc.publish( pcl_msg );
+    ROS_INFO( "DONE...!" );
 
 }
-
-/// @brief Publishes the pose of kth frame with respect to global frame (ie. 1st frame)
-/// Publishes to var `pub_final_pose`
-void SolveDVO::publishPoseFinal(Eigen::MatrixXf rot, Eigen::VectorXf tran)
-{
-    geometry_msgs::Pose rospose;
-    matrixToPose(rot, tran, rospose);
-
-    geometry_msgs::PoseStamped poseS;
-    poseS.header.frame_id = rviz_frame_id;
-    poseS.header.stamp = ros::Time::now();
-    poseS.pose = rospose;
-
-    pub_final_pose.publish( poseS );
-
-}
-
-
-/// @brief Publishes the pose of kth frame with respect to its ref frame
-/// Publishes to var `pub_final_pose`
-void SolveDVO::publishPoseWrtRef(Eigen::MatrixXf rot, Eigen::VectorXf tran)
-{
-    geometry_msgs::Pose rospose;
-    matrixToPose(rot, tran, rospose);
-    rospose.position.x += 500.0;
-
-    geometry_msgs::PoseStamped poseS;
-    poseS.header.frame_id = rviz_frame_id;
-    poseS.header.stamp = ros::Time::now();
-    poseS.pose = rospose;
-
-    pub_pose_wrt_ref.publish( poseS );
-}
-
-
-
-/// @brief Given the rotation and translation matrix convert to ros Pose representation
-/// @param[in] rot : 3x3 rotation matrix
-/// @param[in] trans : 3-vector representing translation
-/// @param[out] rosPose : geometry_msgs::Pose as output
-void SolveDVO::matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose)
-{
-    Eigen::Quaternionf quat(rot);
-
-
-
-    rospose.position.x = tran(0);
-    rospose.position.y = tran(1);
-    rospose.position.z = tran(2);
-    rospose.orientation.x = quat.x();
-    rospose.orientation.y = quat.y();
-    rospose.orientation.z = quat.z();
-    rospose.orientation.w = quat.w();
-}
-
-
-
-
-
 

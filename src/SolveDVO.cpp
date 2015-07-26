@@ -2190,12 +2190,6 @@ void SolveDVO::loopFromFile()
 
     }
 
-void SolveDVO::publishCurrentPointCloud( int level )
-{
-    assert( isCameraIntrinsicsAvailable && isNowFrameAvailable );
-    assert( im_n.size() > 1 );
-
-    ROS_INFO( "DONE...!" );
-
 }
+
 

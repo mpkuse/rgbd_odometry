@@ -729,7 +729,10 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
     Eigen::MatrixXf bestReprojections;
 
     float lambda = 3.0E7    ;
-    for( int itr=0 ; itr< maxIterations ; itr++ ) {
+    float BETA = 0.5;
+    Eigen::VectorXf s = Eigen::VectorXf::Zero(6);
+    for( int itr=0 ; itr< maxIterations ; itr++ )
+    {
 
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         ROS_INFO( "== Iteration %d ==", itr );
@@ -793,54 +796,33 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
         //////////////////////////////////////////////////
         //                  STEP PARAMOUNT              //
-        //      Input  : Jcbian & JTW, epsilon
-        //      Output :
-
-
-
-
-        //
-        // Update Marqt parameter (lambda)
+        //      Input  : Jcbian & JTW, epsilon          //
+        //      Output : psi                            //
+        //////////////////////////////////////////////////
         if( prevTotalEpsilon < currentTotalEpsilon ){ //divergence
-#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
-            ROS_INFO( "DIVERGENCE => Increase lambda");
-#endif
             lambda *= 3.0;
         }
         else
             lambda /= 1.5;
 
-        //lambda = 3.0E15 * sqrt(itr+1);
-#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
-        ROS_INFO( "Lambda = %f", lambda );
-#endif
+
+        Eigen::VectorXf g = JTW * epsilon; // subgradient of \Sum{ V^2(.) }
+        s = (1-BETA)*g + BETA*s;
+
+        Eigen::VectorXf psi = - 1/lambda* s;
 
 
-
-
-
-
-
-
-
-        Eigen::MatrixXf A = /*JTW * Jcbian +*/ lambda * Eigen::MatrixXf::Identity(6,6);
-        Eigen::MatrixXf b = -JTW * epsilon;
-
-
-#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
-        //ROS_INFO_STREAM( "A :\n[ "<<  JTW * Jcbian << " ]" );
-        ROS_INFO_STREAM( "b (-ve gradient dirn)\n[ "<< b.transpose() << " ]" );
-#endif
-
-
-        Eigen::VectorXf psi = A.colPivHouseholderQr().solve(b);
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
         //ROS_INFO_STREAM( "psi : [ "<< psi.transpose() << "]\n"<< "|psi| : "<< psi.norm() );
         ROS_INFO_STREAM( "|psi| : "<< psi.norm() );
 #endif
 
 
-
+        //////////////////////////////////////////////////
+        //                 END   PARAMOUNT              //
+        //      Input  : Jcbian & JTW, epsilon          //
+        //      Output : psi                            //
+        //////////////////////////////////////////////////
 
 
 
@@ -2032,7 +2014,7 @@ void SolveDVO::loopFromFile()
     char frameFileName[50];
     //const char * folder = "xdump_right2left"; //hard dataset
     //const char * folder = "xdump_left2right";
-    const char * folder = "TUM_RGBD/fr2_rpy";
+    const char * folder = "TUM_RGBD/fr1_rpy";
 
     const int START = 0;
     const int END = 3000;
@@ -2067,7 +2049,7 @@ void SolveDVO::loopFromFile()
 
 
     ros::Rate rate(30);
-    for( int iFrameNum = START; iFrameNum < END ; iFrameNum++ )
+    for( int iFrameNum = START; iFrameNum < END ; iFrameNum+=2 )
     {
 
         sprintf( frameFileName, "%s/framemono_%04d.xml", folder, iFrameNum );

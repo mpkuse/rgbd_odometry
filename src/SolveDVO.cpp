@@ -418,6 +418,8 @@ float SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections
         if( reprojections(0,i)<0 || reprojections(0,i)>_nowDist.cols() ||  reprojections(1,i)<0 || reprojections(1,i)>_nowDist.rows()) {
             notJ++;
             //epsilon(i) = 200;
+            //note : On having this one stange thing that happens is as points go out of scene the energy will increase even though the estimates
+            // are getting better. Need a better way to take care of decreasing energy due to points going out of scene.
             continue;
         }
 
@@ -778,6 +780,26 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 
         //
+        // Make normal equations & Solve them
+        Eigen::MatrixXf JTW = Jcbian.transpose(); //J' * W
+        for( int i=0 ; i<weights.rows() ; i++ )
+            JTW.col(i) *= weights(i);
+
+
+
+
+
+
+
+        //////////////////////////////////////////////////
+        //                  STEP PARAMOUNT              //
+        //      Input  : Jcbian & JTW, epsilon
+        //      Output :
+
+
+
+
+        //
         // Update Marqt parameter (lambda)
         if( prevTotalEpsilon < currentTotalEpsilon ){ //divergence
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -794,14 +816,10 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 #endif
 
 
-        prevTotalEpsilon = currentTotalEpsilon;
 
 
-        //
-        // Make normal equations & Solve them
-        Eigen::MatrixXf JTW = Jcbian.transpose(); //J' * W
-        for( int i=0 ; i<weights.rows() ; i++ )
-            JTW.col(i) *= weights(i);
+
+
 
 
 
@@ -823,6 +841,10 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
 
 
+
+
+
+
         //
         // Early Termination ?
 //        if( psi.norm() < psiNormTerminationThreshold )
@@ -832,12 +854,22 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         //    break;
 
 
+
+
+        // keeping track of epsilon frm previous step
+        prevTotalEpsilon = currentTotalEpsilon;
+
+
         //
         // Update R_cap, T_cap
             //Eigen::Matrix3f wx;
             //to_se_3( psi(3), psi(4), psi(5), wx );
             //cR = cR * ( Eigen::Matrix3f::Identity() + wx );
             //cT = cT + Eigen::Vector3f(psi(0), psi(1), psi(2));
+
+
+
+
 
         Eigen::Matrix3f xRot = Eigen::Matrix3f::Identity();
         Eigen::Vector3f xTrans = Eigen::Vector3f::Zero();
@@ -2000,10 +2032,10 @@ void SolveDVO::loopFromFile()
     char frameFileName[50];
     //const char * folder = "xdump_right2left"; //hard dataset
     //const char * folder = "xdump_left2right";
-    const char * folder = "TUM_RGBD/fr1_rpy";
+    const char * folder = "TUM_RGBD/fr2_rpy";
 
     const int START = 0;
-    const int END = 700;
+    const int END = 3000;
 
 
     long lastRefFrame=0;
@@ -2053,8 +2085,8 @@ void SolveDVO::loopFromFile()
 
             if( iFrameNum > START ) {
             // before changing the reference-frame estimate itz pose
-            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+//            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+//            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             }
 
@@ -2080,7 +2112,7 @@ void SolveDVO::loopFromFile()
             ros::Time jstart = ros::Time::now();
             //gaussNewtonIterations(3, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             //gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-            //gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+//            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             gaussNewtonIterations(0, 200, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 //            gaussNewtonIterations(0, 1300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             ros::Duration jdur = ros::Time::now() - jstart;
@@ -2152,12 +2184,33 @@ void SolveDVO::loopFromFile()
             cv::moveWindow("selected edges on ref", 1500, 600 );
             }
 
+            ROS_ERROR( "End of Iterations Display.....!");
             }
 
             //
             // END DISPLAY
 
 #endif
+
+
+#ifdef __MINIMAL_DISPLAY
+        int xlevel = 0;
+        Eigen::MatrixXi reprojectedMask = Eigen::MatrixXi::Zero(im_n[xlevel].rows(), im_n[xlevel].cols());
+        cordList_2_mask(reprojections, reprojectedMask);
+
+        cv::Mat outRef;
+        sOverlay(im_r[xlevel], ref_edge_map[xlevel], outRef, cv::Vec3b(0,0,255));
+        cv::imshow( "selected edges on ref", outRef);
+
+
+        visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
+        char ch = cv::waitKey(1);
+        if( ch == 27 ){ // ESC
+            ROS_ERROR( "ESC pressed quitting...");
+            exit(1);
+        }
+
+#endif //__MINIMAL_DISPLAY
 
 
             //

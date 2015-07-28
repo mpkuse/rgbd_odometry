@@ -45,9 +45,9 @@
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
 
-#define __SHOW_REPROJECTIONS_EACH_ITERATION__
-#define __ENABLE_DISPLAY__  0 //display in loop()
-//#define __MINIMAL_DISPLAY
+//#define __SHOW_REPROJECTIONS_EACH_ITERATION__
+//#define __ENABLE_DISPLAY__  100 //display in loop()
+#define __MINIMAL_DISPLAY
 
 
 #define __REPROJECTION_LEVEL 0

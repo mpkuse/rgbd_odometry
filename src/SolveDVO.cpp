@@ -729,7 +729,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
     Eigen::MatrixXf bestReprojections;
 
     float lambda = 3.0E7    ;
-    float BETA = 0.5;
+    float BETA = 0.8;
     Eigen::VectorXf s = Eigen::VectorXf::Zero(6);
     for( int itr=0 ; itr< maxIterations ; itr++ )
     {
@@ -810,6 +810,15 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
         s = (1-BETA)*g + BETA*s;
 
         Eigen::VectorXf psi = - 1/lambda* s;
+
+
+        // Possible projection of `psi` on a hyper sphere (of radius \delta)
+        //      Projected subgradient method / Trust region enforcement step
+        if( psi.norm() > 0.01f )
+        {
+            psi = psi / psi.norm() * 0.01f;
+        }
+
 
 
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -1862,9 +1871,9 @@ void SolveDVO::loop()
 
             if( nFrame > 0 ) {
                 // before changing the reference-frame estimate itz pose
-                gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-                gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-                gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+                //gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+                //gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+                gaussNewtonIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             }
 
 
@@ -1890,9 +1899,9 @@ void SolveDVO::loop()
 
         setNowFrame();
         ros::Time jstart = ros::Time::now();
-        gaussNewtonIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-        gaussNewtonIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-        gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        //gaussNewtonIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+        //gaussNewtonIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        gaussNewtonIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
         ros::Duration jdur = ros::Time::now() - jstart;
         gaussNewtonIterationsComputeTime = jdur.toSec();
         ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );
@@ -2049,7 +2058,7 @@ void SolveDVO::loopFromFile()
 
 
     ros::Rate rate(30);
-    for( int iFrameNum = START; iFrameNum < END ; iFrameNum+=2 )
+    for( int iFrameNum = START; iFrameNum < END ; iFrameNum++ )
     {
 
         sprintf( frameFileName, "%s/framemono_%04d.xml", folder, iFrameNum );
@@ -2095,7 +2104,7 @@ void SolveDVO::loopFromFile()
             //gaussNewtonIterations(3, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             //gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
 //            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-            gaussNewtonIterations(0, 200, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            gaussNewtonIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 //            gaussNewtonIterations(0, 1300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();

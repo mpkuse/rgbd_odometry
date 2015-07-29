@@ -18,34 +18,50 @@ PnPOdometry::PnPOdometry()
 
 
 
+    // subscriber init
     sub_pyd = nh.subscribe( "/Xtion/rgbdPyramid", 1, &PnPOdometry::imageArrivedCallBack, this );
+
+
+
+    // publisher init
+    pub_rel_pose = nh.advertise<geometry_msgs::PoseStamped>( "/pnpVO/poseRel", 1 );
+
 }
 
 void PnPOdometry::eventLoop()
 {
     ROS_INFO( "Start of Event loop" );
 
+#ifdef __FROM_FILES
     char frameFileName[50];
     const char * folder = "TUM_RGBD/fr1_rpy";
+#endif
 
 
     ros::Rate rate(30);
     int nFrame=0;
 
+    cv::Mat poseOfNow_R, poseOfNow_T; // pose of the now frame in frame of reference of the ref-frame
+    poseOfNow_R = cv::Mat::eye(3,3, CV_32F );
+    poseOfNow_T = cv::Mat::zeros(3,1, CV_32F );
+
+
     cv::Mat iR, iT;
-    iR = cv::Mat::zeros(3,3, CV_32F );
+    iR = cv::Mat::eye(3,3, CV_32F );
     iT = cv::Mat::zeros(3,1, CV_32F );
 
     while( ros::ok() )
     {
         ros::spinOnce();
 
+#ifdef __FROM_FILES
         sprintf( frameFileName, "%s/framemono_%04d.xml", folder, nFrame );
         bool flag = loadFromFile(frameFileName );
         if( flag == false ) {
             ROS_ERROR( "No More files, Quitting..");
             break;
         }
+#endif
 
         if( !isFrameAvailable )
             continue;
@@ -76,6 +92,9 @@ void PnPOdometry::eventLoop()
         std::vector<cv::Point2f> reprojectedPts, originalNowImagepts, refPts;
         pnpEstimation( iR, iT, refPts, originalNowImagepts, reprojectedPts );
 
+        // note :
+        //       iR together with iT, brings points from the model coordinate system to the camera coordinate system.
+
 
 
 
@@ -83,11 +102,11 @@ void PnPOdometry::eventLoop()
         // DISPLAY
         //
         {
-            cv::Mat tmpnow, tmpref;
-            cv::drawKeypoints( now_framemono[0], now_pt_features, tmpnow );
-            cv::imshow( "now with keypoints", tmpnow );
-            cv::imshow("now", now_framemono[0]);
-            cv::imshow("ref", ref_framemono[0]);
+//            cv::Mat tmpnow, tmpref;
+//            cv::drawKeypoints( now_framemono[0], now_pt_features, tmpnow );
+//            cv::imshow( "now with all keypoints", tmpnow );
+//            cv::imshow("now", now_framemono[0]);
+//            cv::imshow("ref", ref_framemono[0]);
 
             cv::Mat img_matches;
             cv::drawMatches( now_framemono[0], now_pt_features, ref_framemono[0], ref_pt_features,
@@ -100,13 +119,23 @@ void PnPOdometry::eventLoop()
 
 
 
-            char ch = cv::waitKey(0);
+            char ch = cv::waitKey(1);
             if( ch == 27 ){ // ESC
                 ROS_ERROR( "ESC pressed quitting...");
                 exit(1);
             }
         }
+        //
+        // END DISPLAY
+        //
 
+
+        // Convert iR,iT as per our convention of co-ordinates
+        // pose of the now frame in frame of reference of the ref-frame
+        poseOfNow_T = -iR.t() * iT;
+        poseOfNow_R = iR.t();
+
+        publishRelativePose( poseOfNow_R, poseOfNow_T );
 
         rate.sleep();
         nFrame++;
@@ -227,6 +256,49 @@ void PnPOdometry::imageArrivedCallBack(rgbd_odometry::RGBDFramePydConstPtr msg)
     isFrameAvailable = true;
 
 }
+
+void PnPOdometry::publishRelativePose(cv::Mat iR, cv::Mat iT)
+{
+    //now publish newR, newT after converting them to quaternions
+    Eigen::Matrix3f eR;
+    Eigen::Vector3f eT;
+    cv::cv2eigen( iR, eR );
+    cv::cv2eigen( iT, eT );
+
+    geometry_msgs::Pose rospose;
+    matrixToPose( eR, eT, rospose );
+
+    geometry_msgs::PoseStamped poseS;
+    poseS.header.frame_id = "denseVO";
+    poseS.header.stamp = ros::Time::now();
+    poseS.pose = rospose;
+
+    pub_rel_pose.publish( poseS );
+
+
+}
+
+
+
+/// @brief Given the rotation and translation matrix convert to ros Pose representation
+/// @param[in] rot : 3x3 rotation matrix
+/// @param[in] trans : 3-vector representing translation
+/// @param[out] rosPose : geometry_msgs::Pose as output
+void PnPOdometry::matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose)
+{
+    Eigen::Quaternionf quat(rot);
+
+
+
+    rospose.position.x = tran(0);
+    rospose.position.y = tran(1);
+    rospose.position.z = tran(2);
+    rospose.orientation.x = quat.x();
+    rospose.orientation.y = quat.y();
+    rospose.orientation.z = quat.z();
+    rospose.orientation.w = quat.w();
+}
+
 
 void PnPOdometry::setAsNowFrame()
 {

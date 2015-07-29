@@ -3,11 +3,14 @@
 
 #include <ros/ros.h>
 
+#include <Eigen/Dense>
 
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/nonfree/features2d.hpp>
+#include <opencv2/core/eigen.hpp>
+
 
 
 #include <cv_bridge/cv_bridge.h>
@@ -36,6 +39,20 @@ private:
 
     bool loadFromFile(const char *xmlFileName);
     void imageArrivedCallBack( rgbd_odometry::RGBDFramePydConstPtr msg );
+
+
+
+    //
+    // Publisher of Pose and related functions
+    //      Note: Will publisher under -- "/pnpVO/"
+    ros::Publisher pub_rel_pose; ///< relative to ref frame pose
+
+    void publishRelativePose( cv::Mat iR, cv::Mat iT );
+
+    //helper
+    void matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose);
+
+
 
 
     //

@@ -20,6 +20,7 @@
 
 #include <rgbd_odometry/RGBDFramePyd.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <nav_msgs/Path.h>
 
 class PnPOdometry
 {
@@ -46,8 +47,14 @@ private:
     // Publisher of Pose and related functions
     //      Note: Will publisher under -- "/pnpVO/"
     ros::Publisher pub_rel_pose; ///< relative to ref frame pose
+    ros::Publisher pub_global_pose; ///< relative to 1st frame pose (ie. global co-ordinate frame)
+    ros::Publisher pub_path;
 
     void publishRelativePose( cv::Mat iR, cv::Mat iT );
+    void publishGlobalPose( cv::Mat iR, cv::Mat iT );
+
+    std::vector<geometry_msgs::PoseStamped> poseAry;
+    void publishPath( cv::Mat iR, cv::Mat iT );
 
     //helper
     void matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose);

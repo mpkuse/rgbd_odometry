@@ -25,6 +25,9 @@ PnPOdometry::PnPOdometry()
 
     // publisher init
     pub_rel_pose = nh.advertise<geometry_msgs::PoseStamped>( "/pnpVO/poseRel", 1 );
+    pub_global_pose = nh.advertise<geometry_msgs::PoseStamped>( "/pnpVO/poseGlobal", 1 );
+    pub_path = nh.advertise<nav_msgs::Path>( "/pnpVO/path", 1 );
+    poseAry.clear();
 
 }
 
@@ -41,9 +44,23 @@ void PnPOdometry::eventLoop()
     ros::Rate rate(30);
     int nFrame=0;
 
-    cv::Mat poseOfNow_R, poseOfNow_T; // pose of the now frame in frame of reference of the ref-frame
-    poseOfNow_R = cv::Mat::eye(3,3, CV_32F );
-    poseOfNow_T = cv::Mat::zeros(3,1, CV_32F );
+
+    cv::Mat poseGlobal_R, poseGlobal_T;
+    poseGlobal_R = cv::Mat::eye(3,3, CV_32FC1 );
+    poseGlobal_T = cv::Mat::zeros(3,1, CV_32FC1 );
+
+
+
+    cv::Mat poseOfKeyFrame_R, poseOfKeyFrame_T;
+    poseOfKeyFrame_R = cv::Mat::eye(3,3, CV_32FC1 );
+    poseOfKeyFrame_T = cv::Mat::zeros(3,1, CV_32FC1 );
+
+
+
+    cv::Mat poseOfNowRelative_R, poseOfNowRelative_T; // pose of the now frame in frame of reference of the ref-frame
+    poseOfNowRelative_R = cv::Mat::eye(3,3, CV_32FC1 );
+    poseOfNowRelative_T = cv::Mat::zeros(3,1, CV_32FC1 );
+
 
 
     cv::Mat iR, iT;
@@ -69,11 +86,15 @@ void PnPOdometry::eventLoop()
         ROS_INFO( "***--- FRAME #%d ---***", nFrame );
 
         //if( nFrame%50 == 0 )
-        if( good_matches.size() < 70 )
+        if( good_matches.size() < 70 ) // Condition for change of key-frame / ref-frame
         {
             ROS_INFO( "Set as reference frame" );
             setAsRefFrame();
             extractRefFeature();
+
+            // note the pose of key-frame
+            poseGlobal_R.copyTo( poseOfKeyFrame_R );
+            poseGlobal_T.copyTo( poseOfKeyFrame_T );
 
             // reset iR,iT
             iR = cv::Mat::zeros(3,3, CV_32F );
@@ -132,10 +153,25 @@ void PnPOdometry::eventLoop()
 
         // Convert iR,iT as per our convention of co-ordinates
         // pose of the now frame in frame of reference of the ref-frame
-        poseOfNow_T = -iR.t() * iT;
-        poseOfNow_R = iR.t();
+        poseOfNowRelative_T = -iR.t() * iT;
+        poseOfNowRelative_R = iR.t();
 
-        publishRelativePose( poseOfNow_R, poseOfNow_T );
+
+        // Find the above pose in global co-ordinate system
+        poseOfKeyFrame_R.convertTo(poseOfKeyFrame_R, CV_32FC1);
+        poseOfKeyFrame_T.convertTo(poseOfKeyFrame_T, CV_32FC1);
+        poseOfNowRelative_R.convertTo(poseOfNowRelative_R, CV_32FC1);
+        poseOfNowRelative_T.convertTo(poseOfNowRelative_T, CV_32FC1);
+        //if you dont convert, matrix multiply (below does not work). Looks like a bug in OpenCV :P (AS IN VERSION 2.4.9)
+
+        poseGlobal_T = poseOfKeyFrame_T + poseOfKeyFrame_R*poseOfNowRelative_T;
+        poseGlobal_R = poseOfKeyFrame_R*poseOfNowRelative_R;
+
+
+        publishRelativePose( poseOfNowRelative_R, poseOfNowRelative_T );
+        publishGlobalPose( poseGlobal_R, poseGlobal_T );
+        publishPath( poseGlobal_R, poseGlobal_T );
+
 
         rate.sleep();
         nFrame++;
@@ -275,6 +311,38 @@ void PnPOdometry::publishRelativePose(cv::Mat iR, cv::Mat iT)
 
     pub_rel_pose.publish( poseS );
 
+
+}
+
+void PnPOdometry::publishGlobalPose(cv::Mat iR, cv::Mat iT)
+{
+    //now publish newR, newT after converting them to quaternions
+    Eigen::Matrix3f eR;
+    Eigen::Vector3f eT;
+    cv::cv2eigen( iR, eR );
+    cv::cv2eigen( iT, eT );
+
+    geometry_msgs::Pose rospose;
+    matrixToPose( eR, eT, rospose );
+
+    geometry_msgs::PoseStamped poseS;
+    poseS.header.frame_id = "denseVO";
+    poseS.header.stamp = ros::Time::now();
+    poseS.pose = rospose;
+
+    pub_global_pose.publish( poseS );
+
+    poseAry.push_back( poseS );
+}
+
+void PnPOdometry::publishPath(cv::Mat iR, cv::Mat iT)
+{
+    nav_msgs::Path pathMsg;
+    pathMsg.header.frame_id = "denseVO";
+    pathMsg.header.stamp = ros::Time::now();
+    for( int i=0 ; i<poseAry.size() ; i++ )
+        pathMsg.poses.push_back(poseAry[i]);
+    pub_path.publish( pathMsg );
 
 }
 

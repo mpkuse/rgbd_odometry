@@ -48,6 +48,9 @@ find_package( message_generation )
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
+add_message_files(DIRECTORY msg)
+
+
  add_message_files(
    FILES
    RGBDFrame.msg
@@ -70,7 +73,6 @@ find_package( message_generation )
 #   Action2.action
 # )
 
-add_message_files(DIRECTORY msg)
 
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
@@ -199,9 +201,23 @@ add_executable( loadGTPath
 )
 
 
+add_executable( opencvpnp
+    src/opencvpnp.cpp
+    src/PnPOdometry.cpp
+    include/PnPOdometry.h
+)
+
+
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
 # add_dependencies(rgbd_odometry_node rgbd_odometry_generate_messages_cpp)
+add_dependencies(camTopic2PublisherPyD rgbd_odometry_generate_messages_cpp)
+add_dependencies(dvo rgbd_odometry_generate_messages_cpp)
+add_dependencies(pnp rgbd_odometry_generate_messages_cpp)
+add_dependencies(rgbdSubsc rgbd_odometry_generate_messages_cpp)
+add_dependencies(publisherPyd rgbd_odometry_generate_messages_cpp)
+add_dependencies(publisher rgbd_odometry_generate_messages_cpp)
+add_dependencies(opencvpnp rgbd_odometry_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
  target_link_libraries(publisher
@@ -249,6 +265,12 @@ add_executable( loadGTPath
  target_link_libraries( loadGTPath
     ${catkin_LIBRARIES}
  )
+
+
+ target_link_libraries( opencvpnp
+    ${catkin_LIBRARIES}
+ )
+
 
 #############
 ## Install ##

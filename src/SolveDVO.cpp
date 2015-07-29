@@ -52,7 +52,7 @@ void SolveDVO::setCameraMatrix(const char *calibFile)
     cv::FileStorage fs(calibFile, cv::FileStorage::READ);
     if( fs.isOpened() == false )
     {
-        ROS_ERROR_STREAM( "[SolvePnP::setCameraMatrix] Error opening camera "
+        ROS_ERROR_STREAM( "[SolveDVO::setCameraMatrix] Error opening camera "
                 "params file : "<< calibFile );
         return;
     }
@@ -75,7 +75,7 @@ void SolveDVO::setCameraMatrix(const char *calibFile)
 
     K_inv = K.inverse();
 
-    ROS_INFO( "[SolvePnP::setCameraMatrix] Camera Matrix & Distortion Coif Loaded");
+    ROS_INFO( "[SolveDVO::setCameraMatrix] Camera Matrix & Distortion Coif Loaded");
     ROS_INFO( "fx=%.4f, fy=%.4f, cx=%.4f, cy=%.4f", fx, fy, cx, cy );
 
 

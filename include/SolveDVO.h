@@ -53,7 +53,8 @@
 #define __REPROJECTION_LEVEL 0
 
 
-
+#undef NDEBUG
+#include <assert.h>
 
 
 
@@ -75,6 +76,7 @@ class SolveDVO
     friend class MentisVisualHandle;
 
 public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     SolveDVO();
     void loop();
     void loopFromFile();

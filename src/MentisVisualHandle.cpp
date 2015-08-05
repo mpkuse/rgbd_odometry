@@ -184,9 +184,9 @@ void MentisVisualHandle::matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran,
 
 
 
-    rospose.position.x = 1000.*tran(0);
-    rospose.position.y = 1000.*tran(1);
-    rospose.position.z = 1000.*tran(2);
+    rospose.position.x = tran(0);
+    rospose.position.y = tran(1);
+    rospose.position.z = tran(2);
     rospose.orientation.x = quat.x();
     rospose.orientation.y = quat.y();
     rospose.orientation.z = quat.z();

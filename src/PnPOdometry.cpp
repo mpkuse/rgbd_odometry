@@ -168,9 +168,10 @@ void PnPOdometry::eventLoop()
         poseGlobal_R = poseOfKeyFrame_R*poseOfNowRelative_R;
 
 
-        publishRelativePose( poseOfNowRelative_R, poseOfNowRelative_T );
-        publishGlobalPose( poseGlobal_R, poseGlobal_T );
-        publishPath( poseGlobal_R, poseGlobal_T );
+        //publishRelativePose( poseOfNowRelative_R, poseOfNowRelative_T );
+        //publishGlobalPose( poseGlobal_R, poseGlobal_T );
+        //publishPath( poseGlobal_R, poseGlobal_T );
+        publishGlobalPose( iR, iT );
 
 
         rate.sleep();

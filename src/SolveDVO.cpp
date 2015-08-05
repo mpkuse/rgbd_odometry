@@ -4,6 +4,7 @@
 /// default constructor. Init the subscribers
 SolveDVO::SolveDVO()
 {
+
     isCameraIntrinsicsAvailable = false;
     isFrameAvailable = false;
     isRefFrameAvailable = false;
@@ -838,8 +839,8 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
         //
         // Early Termination ?
-//        if( psi.norm() < psiNormTerminationThreshold )
-//            break;
+        if( psi.norm() < psiNormTerminationThreshold )
+            break;
 
         //if( (itr - bestItrNumber) > 10 ) //if no betterment in function value for X iterations then give up
         //    break;
@@ -871,11 +872,6 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
         cT = cR*xTrans + cT;
         cR = cR * xRot;
-
-
-#ifndef __SHOW_REPROJECTIONS_EACH_ITERATION__
-        processResidueHistogram( epsilon, true );
-#endif   //__SHOW_REPROJECTIONS_EACH_ITERATION__
 
 
 
@@ -1180,7 +1176,8 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
 /// where, sigma^2 = 1/n \sum_i r^2 6/ ( 5 + r/sigma )^2 ....iterative
 float SolveDVO::getWeightOf( float r)
 {
-    return 5.0 / (6.0 + r*r/.25 );
+    //return 5.0 / (6.0 + r*r/.25 );
+    return (float)std::exp( -fabs(r/9) );
 }
 
 
@@ -1827,8 +1824,6 @@ void SolveDVO::loop()
 
 
     long nFrame=0;
-    long lastRefFrame=0;
-    double lastRefFrameComputeTime;
     cv::Mat debugScratchBoard = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
     double gaussNewtonIterationsComputeTime;
 
@@ -1855,7 +1850,30 @@ void SolveDVO::loop()
     float visibleRatio = 0.0;
 
 
-    ros::Rate rate(30);
+    long lastRefFrame=0;
+
+    ros::Rate rate(35);
+    //
+    //capture the 1st frame (as ref-frame) unconditionally
+    while( ros::ok() )
+    {
+        ros::spinOnce();
+        ROS_INFO_ONCE( "Waiting for RGBDFramePyD messages..." );
+        if( (this->isFrameAvailable) )
+        {
+            ROS_INFO( "Setting 1st Frame as reference frame" );
+            setRefFrame();
+            preProcessRefFrame();
+            lastRefFrame = 0;
+
+            this->isFrameAvailable = false;
+            rate.sleep();
+            break;
+        }
+        rate.sleep();
+    }
+
+
     while( ros::ok() )
     {
         ros::spinOnce();
@@ -1864,37 +1882,6 @@ void SolveDVO::loop()
 
         ROS_INFO( "=-=-=-=-=-=-== Frame # %ld ==-=-=-=-=-=-=", nFrame );
 
-
-        //if( (nFrame % 9000000) == 0 )
-        if( signalGetNewRefImage == true )
-        {
-
-            if( nFrame > 0 ) {
-                // before changing the reference-frame estimate itz pose
-                //gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-                //gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-                gaussNewtonIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-            }
-
-
-            lastRefFrame = nFrame;
-            setRefFrame();
-
-
-            ros::Time jstart = ros::Time::now();
-            preProcessRefFrame();
-            ros::Duration jdur = ros::Time::now() - jstart;
-            lastRefFrameComputeTime = jdur.toSec();
-
-
-            keyR = nR;
-            keyT = nT;
-            cR = Eigen::Matrix3f::Identity();
-            cT = Eigen::Vector3f::Zero();
-            signalGetNewRefImage = false;
-            sprintf( signalGetNewRefImageMsg, "" );
-
-        }
 
 
         setNowFrame();
@@ -1938,13 +1925,48 @@ void SolveDVO::loop()
             signalGetNewRefImage = true;
         }
 
+        if( reprojections.cols() < 50 ) //this was put in here after experience from TUM-RGBD/kidnap sequence
+        {
+            ROS_ERROR( "Too few reprojected points, change reference frame" );
+            signalGetNewRefImage = true;
+        }
+
+
+        //if( (nFrame % 9000000) == 0 )
+        if( signalGetNewRefImage == true )
+        {
+            ROS_INFO( "!! NEW REFERENCE FRAME !!");
+            ROS_INFO( "Reason : %s", signalGetNewRefImageMsg );
+
+
+            lastRefFrame = nFrame;
+            setRefFrame();
+
+
+            preProcessRefFrame();
+
+
+            // register the global pose of key-frame
+            keyR = nR;
+            keyT = nT;
+
+            // reset pose with respect to newly changed reference frame
+            cR = Eigen::Matrix3f::Identity();
+            cT = Eigen::Vector3f::Zero();
+            signalGetNewRefImage = false;
+            sprintf( signalGetNewRefImageMsg, "" );
+
+        }
 
 
 
+
+        // ALL DISPLAY
+        {
 #ifdef __ENABLE_DISPLAY__
         //
         //Debugging display of re-projected points
-        {
+
 
             int xlevel = 0;
             Eigen::MatrixXi reprojectedMask = Eigen::MatrixXi::Zero(im_n[xlevel].rows(), im_n[xlevel].cols());
@@ -1973,7 +1995,7 @@ void SolveDVO::loop()
                 ROS_ERROR( "ESC pressed quitting...");
                 exit(1);
             }
-        }
+
 #endif
 
 
@@ -1988,6 +2010,10 @@ void SolveDVO::loop()
 
 
         visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
+
+        visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:2 );
+
+
         char ch = cv::waitKey(1);
         if( ch == 27 ){ // ESC
             ROS_ERROR( "ESC pressed quitting...");
@@ -1995,7 +2021,7 @@ void SolveDVO::loop()
         }
 
 #endif //__MINIMAL_DISPLAY
-
+    }
 
         mviz.publishPoseFinal(nR, nT);
         mviz.publishPath();
@@ -2004,6 +2030,7 @@ void SolveDVO::loop()
 
         rate.sleep();
         nFrame++;
+        ros::spinOnce();
     }
 
 
@@ -2023,7 +2050,7 @@ void SolveDVO::loopFromFile()
     char frameFileName[50];
     //const char * folder = "xdump_right2left"; //hard dataset
     //const char * folder = "xdump_left2right";
-    const char * folder = "TUM_RGBD/fr1_rpy";
+    const char * folder = "TUM_RGBD/fr1_xyz";
 
     const int START = 0;
     const int END = 3000;
@@ -2075,6 +2102,7 @@ void SolveDVO::loopFromFile()
             ROS_INFO( "Reason : %s", signalGetNewRefImageMsg );
 
             if( iFrameNum > START ) {
+                setNowFrame();
             // before changing the reference-frame estimate itz pose
 //            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
 //            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
@@ -2101,11 +2129,7 @@ void SolveDVO::loopFromFile()
             setNowFrame();
 
             ros::Time jstart = ros::Time::now();
-            //gaussNewtonIterations(3, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-            //gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-//            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             gaussNewtonIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-//            gaussNewtonIterations(0, 1300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();
             ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );
@@ -2185,21 +2209,27 @@ void SolveDVO::loopFromFile()
 
 
 #ifdef __MINIMAL_DISPLAY
-        int xlevel = 0;
-        Eigen::MatrixXi reprojectedMask = Eigen::MatrixXi::Zero(im_n[xlevel].rows(), im_n[xlevel].cols());
-        cordList_2_mask(reprojections, reprojectedMask);
+            {
+                int xlevel = 0;
+                Eigen::MatrixXi reprojectedMask = Eigen::MatrixXi::Zero(im_n[xlevel].rows(), im_n[xlevel].cols());
+                cordList_2_mask(reprojections, reprojectedMask);
 
-        cv::Mat outRef;
-        sOverlay(im_r[xlevel], ref_edge_map[xlevel], outRef, cv::Vec3b(0,0,255));
-        cv::imshow( "selected edges on ref", outRef);
+                cv::Mat outRef;
+                sOverlay(im_r[xlevel], ref_edge_map[xlevel], outRef, cv::Vec3b(0,0,255));
+                cv::imshow( "selected edges on ref", outRef);
 
 
-        visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
-        char ch = cv::waitKey(1);
-        if( ch == 27 ){ // ESC
-            ROS_ERROR( "ESC pressed quitting...");
-            exit(1);
-        }
+                visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
+
+
+                visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:2 );
+
+                char ch = cv::waitKey(1);
+                if( ch == 27 ){ // ESC
+                    ROS_ERROR( "ESC pressed quitting...");
+                    exit(1);
+                }
+            }
 
 #endif //__MINIMAL_DISPLAY
 

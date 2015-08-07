@@ -231,7 +231,7 @@ void SolveDVO::enlistRefEdgePts(int level, Eigen::MatrixXi& refEdgePtsMask, Spac
                 _2d(1,nC) = yy;
 
                 // get 3d pt of yy,xx using the _depth (ref depth)
-                float Z = _refDepth(yy,xx);
+                float Z = _refDepth(yy,xx) / 1000.0f; //converting mm to m for numerical conditioning
                 float X = Z * (xx-tmpcx) * tmpfx;
                 float Y = Z * (yy-tmpcy) * tmpfy;
 
@@ -661,7 +661,7 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
         // Possible projection of `psi` on a hyper sphere (of radius \delta)
         //      Projected subgradient method / Trust region enforcement step
-        if( psi.norm() > 0.001f ) //1mm ball
+        if( psi.norm() > 0.01f ) //1mm ball
         {
             psi = psi / psi.norm() * 0.001f;
         }
@@ -1745,8 +1745,8 @@ void SolveDVO::loop()
         printRT( cR, cT, "Inp" );
         ros::Time jstart = ros::Time::now();
         //gaussNewtonIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-        gaussNewtonIterations(1, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-        gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        //gaussNewtonIterations(1, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        gaussNewtonIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
         ros::Duration jdur = ros::Time::now() - jstart;
         gaussNewtonIterationsComputeTime = jdur.toSec();
         printRT( cR, cT, "Out" );
@@ -1773,11 +1773,11 @@ void SolveDVO::loop()
 
         // These 3 following IFs will check if it is time to change the reference frame
 
-//        if( b_cap > laplacianThreshExitCond ) {
-//            ROS_ERROR( "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
-//            snprintf( signalGetNewRefImageMsg, 450, "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
-//            signalGetNewRefImage = true;
-//        }
+        if( b_cap > laplacianThreshExitCond ) {
+            ROS_ERROR( "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
+            snprintf( signalGetNewRefImageMsg, 450, "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
+            signalGetNewRefImage = true;
+        }
 
 
         if( visibleRatio < ratio_of_visible_pts_thresh ) {
@@ -1873,7 +1873,7 @@ void SolveDVO::loop()
 
         visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
 
-        visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:2 );
+        //visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:2 );
 
 
         char ch = cv::waitKey(1);

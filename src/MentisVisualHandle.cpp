@@ -172,6 +172,96 @@ void MentisVisualHandle::publishPath()
     pub_path.publish(pathMsg);
 }
 
+void MentisVisualHandle::debug(Eigen::Matrix3f cR, Eigen::Vector3f cT)
+{
+    //
+    // make 3d points of the reference frame as a fat matrix X.
+    int level = 0;
+    float scaleFac = (float)pow(2,-level);
+    Eigen::MatrixXf _ref = dvoHandle->im_r[level];
+    Eigen::MatrixXf _ref_depth = dvoHandle->dim_r[level];
+
+    Eigen::MatrixXf XX = Eigen::MatrixXf::Constant( 3, _ref.rows()*_ref.cols(), 1.0f );
+    Eigen::MatrixXf XX_int = Eigen::MatrixXf::Zero( 1, _ref.rows()*_ref.cols() ); //corresponding intensities
+
+
+    int nC = 0;
+    for( int yy=0 ; yy<_ref.rows() ; yy++ )
+    {
+        for( int xx=0 ; xx<_ref.cols() ; xx++ )
+        {
+            float Z = _ref_depth(yy,xx);
+            float intensity = _ref(yy,xx);
+            if( Z < 10.0f )
+                continue;
+
+            float X = Z * (xx-scaleFac*dvoHandle->cx) / (scaleFac*dvoHandle->fx);
+            float Y = Z * (yy-scaleFac*dvoHandle->cy) / (scaleFac*dvoHandle->fy);
+
+            XX(0,nC) = X;
+            XX(1,nC) = Y;
+            XX(2,nC) = Z;
+            XX_int(0,nC) = intensity;
+            nC++;
+        }
+    }
+
+    ROS_INFO( "collected %d 3d points", nC );
+
+    //
+    // transform X~ = R.t() ( X - cT )
+    dvoHandle->printRT( cR, cT, "MVIZ DEBUG");
+    Eigen::MatrixXf cTRep;
+    Eigen::Vector3f tmp_bogus(cT(0), cT(1), 5.0f);
+    igl::repmat(tmp_bogus,1,XX.cols(),cTRep); // repeat cT col-wise (uses IGL library)
+    Eigen::MatrixXf XX_transformed = cR.transpose() * ( XX - cTRep ); //this would be X~
+
+
+    ROS_INFO_STREAM( "rep :\n"<< cTRep.topLeftCorner(3, 7) );
+    ROS_INFO_STREAM( "XX :\n"<< XX.topLeftCorner(3, 7) );
+
+
+
+    //
+    // project X~ on the image
+    Eigen::Matrix3f scaleMatrix = Eigen::Matrix3f::Identity();
+    scaleMatrix(0,0) = scaleFac;
+    scaleMatrix(1,1) = scaleFac;
+
+    Eigen::ArrayXXf lastRow_inv = XX_transformed.row(2).array().inverse();
+    for( int i=0 ; i<3 ; i++ )
+        XX_transformed.row(i).array() *= lastRow_inv;
+
+
+    Eigen::MatrixXf _2d_reprojected = scaleMatrix * dvoHandle->K * XX_transformed;
+
+
+    //
+    // convert to image (2d matrix) NxN
+
+    Eigen::MatrixXf image = Eigen::MatrixXf::Zero(_ref.rows(), _ref.cols());
+    for( int i=0 ; i<nC ; i++ )
+    {
+        int xx = (int)_2d_reprojected(0,i);
+        int yy = (int)_2d_reprojected(1,i);
+
+
+        int inten = XX_int(0,i);
+
+        if( yy>0 && yy<image.rows()-1 && xx>0 && xx<image.cols()-1 )
+        {
+            image(yy,xx) = inten;
+//            image(yy+1,xx) = inten;
+//            image(yy,xx+1) = inten;
+//            image(yy+1,xx+1) = inten;
+        }
+    }
+
+
+    dvoHandle->imshowEigenImage( "debug full reprojection", image );
+
+}
+
 
 
 /// @brief Given the rotation and translation matrix convert to ros Pose representation
@@ -183,10 +273,11 @@ void MentisVisualHandle::matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran,
     Eigen::Quaternionf quat(rot);
 
 
+    float fac = 1.0f;
 
-    rospose.position.x = tran(0);
-    rospose.position.y = tran(1);
-    rospose.position.z = tran(2);
+    rospose.position.x = tran(0)/fac;
+    rospose.position.y = tran(1)/fac;
+    rospose.position.z = tran(2)/fac;
     rospose.orientation.x = quat.x();
     rospose.orientation.y = quat.y();
     rospose.orientation.z = quat.z();

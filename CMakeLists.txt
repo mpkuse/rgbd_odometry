@@ -102,7 +102,7 @@ catkin_package(CATKIN_DEPENDS message_runtime)
 ###########
 ## Build ##
 ###########
-set(CMAKE_CXX_FLAGS "-mavx -fpermissive -ffast-math")
+set(CMAKE_CXX_FLAGS "-g -mavx -fpermissive -ffast-math")
 
 # CUDA flags
 # help - http://choorucode.com/2013/09/13/how-to-build-cuda-programs-using-cmake/
@@ -170,6 +170,8 @@ add_executable(dvo
     src/FColorMap.cpp
     include/MentisVisualHandle.h
     src/MentisVisualHandle.cpp
+    include/GOP.h
+    src/GOP.cpp
 )
 
 

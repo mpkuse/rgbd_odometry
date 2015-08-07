@@ -21,13 +21,21 @@
 #include <nav_msgs/Path.h>
 
 #include <Eigen/Dense>
+#include <igl/repmat.h>
+
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/opencv.hpp>
+#include <opencv2/core/eigen.hpp>
 
 class SolveDVO; //forward declaration of a friend class
+
+
 
 /// @class Defines a class for visualization to RViz.
 class MentisVisualHandle
 {
 public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     MentisVisualHandle();
     void setNodeHandle( SolveDVO* const dvoH );
     void setRVizFrameID( const char * frameID );
@@ -37,6 +45,8 @@ public:
     void publishPoseFinal(Eigen::Matrix3f &rot, Eigen::Vector3f &tran);
     void publishPath();
 
+    // Reprojection debugging code
+    void debug( Eigen::Matrix3f cR, Eigen::Vector3f cT );
 
 
 private:

@@ -35,9 +35,12 @@ void MentisVisualHandle::setNodeHandle(SolveDVO *const dvoH )
     pub_inc_sp = dvoHandle->nh.advertise<visualization_msgs::Marker>( "/testVis/sphere", 100 );
 
     pub_pc = dvoHandle->nh.advertise<sensor_msgs::PointCloud>( "dvo/pointCloud", 1 );
-    pub_final_pose = dvoHandle->nh.advertise<geometry_msgs::PoseStamped>( "dvo/finalPose", 1 );
-    pub_pose_wrt_ref = dvoHandle->nh.advertise<geometry_msgs::PoseStamped>( "dvo/poseWrtRef", 1 );
+    pub_global_pose = dvoHandle->nh.advertise<geometry_msgs::PoseStamped>( "dvo/globalPose", 1 );
     pub_path = dvoHandle->nh.advertise<nav_msgs::Path>("/dvo/path", 1 );
+
+    //debug publishers
+    pub_debug_keyFrames = dvoHandle->nh.advertise<visualization_msgs::MarkerArray>("/dvo/debug/keyFrame", 1 );
+
 
 }
 
@@ -158,7 +161,7 @@ void MentisVisualHandle::publishPoseFinal(Eigen::Matrix3f &rot, Eigen::Vector3f 
     poseS.pose = rospose;
     poseAry.push_back(poseS);
 
-    pub_final_pose.publish( poseS );
+    pub_global_pose.publish( poseS );
 
 }
 
@@ -262,6 +265,99 @@ void MentisVisualHandle::debug(Eigen::Matrix3f cR, Eigen::Vector3f cT)
 
 }
 
+void MentisVisualHandle::publishGOP()
+{
+    nav_msgs::Path pathMsg;
+    pathMsg.header.frame_id = rviz_frame_id;
+    pathMsg.header.stamp = ros::Time::now();
+
+    geometry_msgs::PoseStamped st;
+    for( int i=0 ; i<dvoHandle->gop.size() ; i++ )
+    {
+        st.header = pathMsg.header;
+        st.pose = dvoHandle->gop.getGlobalPoseAt(i);
+        pathMsg.poses.push_back( st );
+    }
+
+
+#ifdef __DEBUG_FRAME_MARKER__
+    //marking keyframes
+    visualization_msgs::MarkerArray markerAry;
+    for( int i=0 ; i<dvoHandle->gop.size() ; i++ )
+    {
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = rviz_frame_id;
+        marker.header.stamp = ros::Time::now();
+        marker.ns = "basic_shapes";
+
+        marker.type = visualization_msgs::Marker::SPHERE;
+        marker.action = visualization_msgs::Marker::ADD;
+
+
+        marker.pose = dvoHandle->gop.getGlobalPoseAt(i);
+
+        if( dvoHandle->gop.isKeyFrameAt(i) )
+        {
+            marker.id = i;
+            marker.scale.x = .03;
+            marker.scale.y = .03;
+            marker.scale.z = .03;
+
+            int reason = dvoHandle->gop.getReasonAt(i);
+            switch(reason)
+            {
+            case 1: //init
+                marker.color.r = 1.0f;
+                marker.color.g = 1.0f;
+                marker.color.b = 0.0f;
+                marker.color.a = 1.0f;
+                break;
+            case 2: //laplacian thresh breached
+                marker.color.r = 1.0f;
+                marker.color.g = 0.0f;
+                marker.color.b = 0.0f;
+                marker.color.a = 1.0f;
+                break;
+            case 3: //ratio of visible less than `thresh`
+                marker.color.r = 0.0f;
+                marker.color.g = 1.0f;
+                marker.color.b = 0.0f;
+                marker.color.a = 1.0f;
+                break;
+            case 4: //# of reprojected pts less than 50
+                marker.color.r = 1.0f;
+                marker.color.g = 1.0f;
+                marker.color.b = 1.0f;
+                marker.color.a = 1.0f;
+                break;
+
+            }
+            markerAry.markers.push_back(marker);
+        }
+#ifdef __DEBUG_FRAME_MARKER_ALL_FRAMES
+        else //non-key frames
+        {
+            marker.id = i;
+            marker.scale.x = .01;
+            marker.scale.y = .01;
+            marker.scale.z = .01;
+            marker.color.r = 0.0f;
+            marker.color.g = 0.0f;
+            marker.color.b = 0.0f;
+            marker.color.a = 1.0f;
+            markerAry.markers.push_back(marker);
+        }
+#endif
+    }
+    pub_debug_keyFrames.publish(markerAry);
+#endif //__DEBUG_FRAME_MARKER__
+
+
+    pub_path.publish(pathMsg);
+    pub_global_pose.publish(st);
+
+}
+
 
 
 /// @brief Given the rotation and translation matrix convert to ros Pose representation
@@ -272,12 +368,9 @@ void MentisVisualHandle::matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran,
 {
     Eigen::Quaternionf quat(rot);
 
-
-    float fac = 1.0f;
-
-    rospose.position.x = tran(0)/fac;
-    rospose.position.y = tran(1)/fac;
-    rospose.position.z = tran(2)/fac;
+    rospose.position.x = tran(0);
+    rospose.position.y = tran(1);
+    rospose.position.z = tran(2);
     rospose.orientation.x = quat.x();
     rospose.orientation.y = quat.y();
     rospose.orientation.z = quat.z();

@@ -77,6 +77,7 @@ void SolveDVO::setCameraMatrix(const char *calibFile)
     K_inv = K.inverse();
 
     ROS_INFO( "[SolveDVO::setCameraMatrix] Camera Matrix & Distortion Coif Loaded");
+    ROS_INFO( "Params File : %s", calibFile );
     ROS_INFO( "fx=%.4f, fy=%.4f, cx=%.4f, cy=%.4f", fx, fy, cx, cy );
 
 
@@ -545,7 +546,7 @@ void SolveDVO::setNowFrame()
 
 
 
-void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix3f& cR, Eigen::Vector3f& cT,
+void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, Eigen::Vector3f& cT,
                                      Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
                                      Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float& finalVisibleRatio)
 {
@@ -661,10 +662,18 @@ void SolveDVO::gaussNewtonIterations(int level, int maxIterations, Eigen::Matrix
 
         // Possible projection of `psi` on a hyper sphere (of radius \delta)
         //      Projected subgradient method / Trust region enforcement step
-        if( psi.norm() > 0.01f ) //1mm ball
+        float norm = psi.norm();
+        float rot_norm = psi.head(3).norm();   // rotation norm
+        float trans_norm = psi.tail(3).norm(); //translation norm
+        if(norm > 0.01f ) //rotation component
         {
-            psi = psi / psi.norm() * 0.001f;
+            psi = psi / norm * 0.01f;
         }
+
+//        if( trans_norm > 0.001f ) //translation component
+//        {
+//            psi.tail(3) = psi.tail(3) / trans_norm * 0.1f;
+//        }
 
 
 
@@ -1672,18 +1681,8 @@ void SolveDVO::loop()
 
 
     cv::Mat debugScratchBoard = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
-    double gaussNewtonIterationsComputeTime;
-
-
-
-    // Pose of currently set Reference-frame (key frame)
-    Eigen::Matrix3f keyR = Eigen::Matrix3f::Identity();
-    Eigen::Vector3f keyT = Eigen::Vector3f::Zero();
-
-    // Pose of now frame in global frame of reference
-    Eigen::Matrix3f nR = Eigen::Matrix3f::Identity();
-    Eigen::Vector3f nT = Eigen::Vector3f::Zero();
-
+    double iterationsComputeTime=0.0;
+    double avgIterationsTime=0.0;
 
 
     // Pose of now frame wrt currently set reference frame
@@ -1717,6 +1716,11 @@ void SolveDVO::loop()
             preProcessRefFrame();
             lastRefFrame = 0;
 
+
+            // setting 1st frame as key-frame with itself as origin.
+            gop.pushAsKeyFrame(nFrame, 1, cR, cT );
+
+
             this->isFrameAvailable = false;
             nFrame++;
             ROS_INFO( "Done setting 1st received frame as reference..now will continue processing frames" );
@@ -1742,23 +1746,14 @@ void SolveDVO::loop()
 
         setNowFrame();
 
-        printRT( cR, cT, "Inp" );
         ros::Time jstart = ros::Time::now();
-        //gaussNewtonIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-        //gaussNewtonIterations(1, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-        gaussNewtonIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        //runIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+        runIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        runIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
         ros::Duration jdur = ros::Time::now() - jstart;
-        gaussNewtonIterationsComputeTime = jdur.toSec();
-        printRT( cR, cT, "Out" );
-        ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );
-
-
-
-        nT = keyT + keyR*cT;
-        nR = keyR*cR;
-        printRT( nR, nT, "Gbl" );
-
-
+        iterationsComputeTime = jdur.toSec();
+        avgIterationsTime = avgIterationsTime*(nFrame-1)/nFrame + iterationsComputeTime/nFrame;
+        ROS_INFO( "Iterations done in %lf ms", iterationsComputeTime*1000 );
 
 
         // This was a critical-patch. Fixed a critical bug. The exit conditions need to be checked on the f_best and not all the epsilons.
@@ -1772,11 +1767,12 @@ void SolveDVO::loop()
 
 
         // These 3 following IFs will check if it is time to change the reference frame
-
+        int reasonForChange=0;
         if( b_cap > laplacianThreshExitCond ) {
             ROS_ERROR( "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
             snprintf( signalGetNewRefImageMsg, 450, "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
             signalGetNewRefImage = true;
+            reasonForChange=2;
         }
 
 
@@ -1784,12 +1780,14 @@ void SolveDVO::loop()
             ROS_ERROR( "Only %.2f of tracked points visible. Required %.2f. Signal change of reference frame", visibleRatio, ratio_of_visible_pts_thresh);
             snprintf(signalGetNewRefImageMsg, 450, "Only %.2f of tracked points visible. Required %.2f. Signal change of reference frame", visibleRatio, ratio_of_visible_pts_thresh );
             signalGetNewRefImage = true;
+            reasonForChange=3;
         }
 
         if( reprojections.cols() < 50 ) //this was put in here after experience from TUM-RGBD/kidnap sequence
         {
             ROS_ERROR( "Too few reprojected points, change reference frame" );
             signalGetNewRefImage = true;
+            reasonForChange=4;
         }
 
 
@@ -1804,16 +1802,19 @@ void SolveDVO::loop()
             setRefFrame();
             preProcessRefFrame();
 
-            keyR = nR;
-            keyT = nT;
+            gop.pushAsKeyFrame(nFrame, reasonForChange, cR, cT );
 
-            // reset pose with respect to newly changed reference frame
+            // reset pose-guess with respect to newly changed reference frame
             cR = Eigen::Matrix3f::Identity();
             cT = Eigen::Vector3f::Zero();
             signalGetNewRefImage = false;
             sprintf( signalGetNewRefImageMsg, "" );
         }
-
+        else
+        {
+            //Currently estimated pose was not of a keyframe
+            gop.pushAsOrdinaryFrame(nFrame, cR, cT);
+        }
 
 
 
@@ -1879,6 +1880,7 @@ void SolveDVO::loop()
         char ch = cv::waitKey(1);
         if( ch == 27 ){ // ESC
             ROS_ERROR( "ESC pressed quitting...");
+            ROS_ERROR( "Average iterations time per frame : %lf ms", avgIterationsTime*1000.0 );
             exit(1);
         }
 
@@ -1887,8 +1889,16 @@ void SolveDVO::loop()
 
 
         // Publishing
-        mviz.publishPoseFinal(nR, nT);
-        mviz.publishPath();
+        //mviz.publishPoseFinal(nR, nT);
+        //mviz.publishPath();
+
+        ros::Time pubstart = ros::Time::now();
+        mviz.publishGOP();
+        ros::Duration pubdur = ros::Time::now() - pubstart;
+        double displayTime = pubdur.toSec();
+        ROS_INFO( "Display done in %lf ms", displayTime*1000 );
+
+
 
 
 //        ros::Time debug_start = ros::Time::now();
@@ -1903,7 +1913,11 @@ void SolveDVO::loop()
         rate.sleep();
         nFrame++;
         ros::spinOnce();
+
     }
+
+
+
 
 
 }
@@ -1979,7 +1993,7 @@ void SolveDVO::loopFromFile()
             // before changing the reference-frame estimate itz pose
 //            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
 //            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-            gaussNewtonIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            runIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             }
 
             keyR = nR;
@@ -2002,7 +2016,7 @@ void SolveDVO::loopFromFile()
             setNowFrame();
 
             ros::Time jstart = ros::Time::now();
-            gaussNewtonIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            runIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();
             ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );
@@ -2101,7 +2115,7 @@ void SolveDVO::loopFromFile()
                 char ch = cv::waitKey(__MINIMAL_DISPLAY);
                 if( ch == 27 ){ // ESC
                     ROS_ERROR( "ESC pressed quitting...");
-                    exit(1);
+                    break;
                 }
             }
 
@@ -2131,13 +2145,14 @@ void SolveDVO::loopFromFile()
             char ch = cv::waitKey(__ENABLE_DISPLAY__);
             if( ch == 27 ){ // ESC
                 ROS_ERROR( "ESC pressed quitting...");
-                exit(1);
+                break;
             }
 
 #endif //__ENABLE_DISPLAY__
 
     }
 
+    ROS_INFO( "Normal Exit...:)");
 }
 
 

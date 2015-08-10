@@ -14,37 +14,71 @@
 ///////////////////////////////////////////////////////////////////////////
 
 #include <ros/ros.h>
+#include <vector>
 
 #include <Eigen/Dense>
 
+#include <geometry_msgs/Pose.h>
+
 
 /// Stores the poses of each frame processed and provides an interface for GOP structure
-class GOP
+class GOPElement
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    GOP();
+    GOPElement();
 
-    void setAsOrdinaryFrame(int frameNum, Eigen::Matrix3f cR, Eigen::Vector3f cT );
-    void setAsKeyFrame(int frameNum, int reason, Eigen::Matrix3f cR, Eigen::Vector3f cT );
+    void setAsOrdinaryFrame(int frameNum, Eigen::Matrix3f wR, Eigen::Vector3f wT );
+    void setAsKeyFrame(int frameNum, int reason, Eigen::Matrix3f wR, Eigen::Vector3f wT );
+
+    const Eigen::Matrix3f& getR();
+    const Eigen::Vector3f& getT();
+    const geometry_msgs::Pose& getPose();
+
+    bool isKeyFrame();
+    int getReason();
 
 private:
     bool keyFrame;
     int frameId;
     int reason_of_change; //this is valid only if isKeyFrame true
 
-    Eigen::Matrix3f nowRel_R; //relative to prev-reference frame
-    Eigen::Vector3f nowRel_T;
-
     Eigen::Matrix3f world_R; //in world-ordinate system (ie. co-ordinate system of 1st frame
     Eigen::Vector3f world_T;
 
-    Eigen::Matrix3f lastKeyFrame_R;
-    Eigen::Vector3f lastKeyFrame_T;
+    geometry_msgs::Pose world_pose;
+    void matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose);
+
 
 };
 
 
+
+/// basically contains a vector of `GOPElement`
+class GOP
+{
+public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    GOP();
+
+    void pushAsOrdinaryFrame(int frameNum, Eigen::Matrix3f cR, Eigen::Vector3f cT );
+    void pushAsKeyFrame(int frameNum, int reason, Eigen::Matrix3f cR, Eigen::Vector3f cT );
+
+    int size();
+
+    const geometry_msgs::Pose &getGlobalPoseAt(int i );
+    const Eigen::Matrix3f &getGlobalRAt(int i );
+    const Eigen::Vector3f &getGlobalTAt(int i );
+
+    bool isKeyFrameAt( int i);
+    int getReasonAt( int i);
+
+private:
+    std::vector<GOPElement> gopVector;
+
+    Eigen::Matrix3f lastKeyFr_R;
+    Eigen::Vector3f lastKeyFr_T;
+};
 
 
 #endif //__GOP_H___

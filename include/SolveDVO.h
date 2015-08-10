@@ -40,6 +40,7 @@
 
 #include <FColorMap.h>
 #include <MentisVisualHandle.h>
+#include <GOP.h>
 
 
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
@@ -97,6 +98,8 @@ private:
 
 
 
+    //
+    // Callback
     void imageArrivedCallBack( rgbd_odometry::RGBDFramePydConstPtr msg );
 
     //
@@ -116,6 +119,13 @@ private:
     bool isNowFrameAvailable, isRefFrameAvailable;
 
 
+
+    //
+    // Frame pose handling class
+    GOP gop;
+
+
+
     //
     // Functions relating to the Gauss-Newton Iterations
     std::vector<JacobianList> _J;
@@ -126,7 +136,7 @@ private:
     bool isJacobianComputed;
     //void computeJacobian();
     //void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
-    void gaussNewtonIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT,
+    void runIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT,
                                 Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
                                 Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float & finalVisibleRatio );
     float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );

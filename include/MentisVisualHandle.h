@@ -16,6 +16,7 @@
 #include <ros/ros.h>
 
 #include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <sensor_msgs/PointCloud.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Path.h>
@@ -29,6 +30,8 @@
 
 class SolveDVO; //forward declaration of a friend class
 
+#define __DEBUG_FRAME_MARKER__ //visualize sphere at poses which were keyframes
+//#define __DEBUG_FRAME_MARKER_ALL_FRAMES
 
 
 /// @class Defines a class for visualization to RViz.
@@ -48,6 +51,9 @@ public:
     // Reprojection debugging code
     void debug( Eigen::Matrix3f cR, Eigen::Vector3f cT );
 
+    // Publishing from GOP
+    void publishGOP();
+
 
 private:
 
@@ -63,10 +69,11 @@ private:
     ros::Publisher pub_inc_sp; ///< incremental sphere (testing)
 
     ros::Publisher pub_pc; ///< point-cloud
-    ros::Publisher pub_final_pose; ///< final pose relative to first frame (ie. global frame)
-    ros::Publisher pub_pose_wrt_ref; ///< publish pose with respect to ref frame
+    ros::Publisher pub_global_pose; ///< final pose relative to first frame (ie. global frame)
     ros::Publisher pub_path; ///< publish path (as evaluated by DVO)
 
+    //debug publishers
+    ros::Publisher pub_debug_keyFrames; ///< publish keyFrame-locations as spheres
 
     //
     // Past Pose Data

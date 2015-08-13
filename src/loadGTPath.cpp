@@ -98,6 +98,20 @@ int main( int argc, char ** argv )
 
 
     ros::Rate rate(100);
+    //skip 1st 10 lines
+    int tmpCount=0;
+    while( getline(fin, line) && ros::ok() )
+    {
+        line.erase(line.begin(), find_if(line.begin(), line.end(), not1(ptr_fun<int, int>(isspace))));
+
+        if(line[0] == '#') continue;
+
+        tmpCount++;
+
+        if( tmpCount > 350 )
+            break;
+    }
+
     while( getline(fin, line) && ros::ok() )
     {
         //the following line trims white space from the beginning of the string

@@ -168,11 +168,13 @@ void GOP::pushAsKeyFrame(int frameNum, int reason, Eigen::Matrix3f cR, Eigen::Ve
     lastKeyFr_T = global_T;
 }
 
+/// Returns size of the gop Vector
 int GOP::size()
 {
     return (int) gopVector.size();
 }
 
+/// Pose at i^{th} pose
 const geometry_msgs::Pose & GOP::getGlobalPoseAt(int i )
 {
     assert( i < gopVector.size() );

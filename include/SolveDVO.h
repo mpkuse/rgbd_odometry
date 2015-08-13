@@ -47,8 +47,10 @@
 //#define GRAD_NORM( A, B ) fabs(A)
 
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
-//#define __ENABLE_DISPLAY__  0 //display in loop()
-#define __MINIMAL_DISPLAY 0
+//#define __SHOW_REPROJECTIONS_EACH_ITERATION__DISPLAY_ONLY
+
+#define __ENABLE_DISPLAY__  1 //display in loop()
+//#define __MINIMAL_DISPLAY 1
 
 
 #define __REPROJECTION_LEVEL 0
@@ -138,7 +140,7 @@ private:
     //void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
     void runIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT,
                                 Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
-                                Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float & finalVisibleRatio );
+                                Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float & finalVisibleRatio, bool noWait );
     float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
 
@@ -246,6 +248,7 @@ private:
     float ratio_of_visible_pts_thresh; //should be between [0, 1]
     float laplacianThreshExitCond; //set this to typically 15-20
     float psiNormTerminationThreshold; //terminate iteration if norm of psi falls below this value
+    float trustRegionHyperSphereRadius; //trust region to scale the direction of descent
 
 
 

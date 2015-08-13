@@ -20,6 +20,9 @@ MentisVisualHandle::MentisVisualHandle()
 
     poseAry.reserve(2000);
     poseAry.clear();
+
+    pcl_msg.points.reserve(20000000); //20 Millions
+    all_intensities.name="intensity";
 }
 
 void MentisVisualHandle::setNodeHandle(SolveDVO *const dvoH )
@@ -265,6 +268,10 @@ void MentisVisualHandle::debug(Eigen::Matrix3f cR, Eigen::Vector3f cT)
 
 }
 
+
+
+/// Publish data to RViz using only the GOP object
+/// Uses only dvoHandle->gop. This function renders the other visualization functions as deprecated.
 void MentisVisualHandle::publishGOP()
 {
     nav_msgs::Path pathMsg;
@@ -355,6 +362,92 @@ void MentisVisualHandle::publishGOP()
 
     pub_path.publish(pathMsg);
     pub_global_pose.publish(st);
+
+}
+
+
+/// Mapping of the environment
+/// Gets the global poses and 3d point cloud (wrt frame) of the frame. Converts each point cloud to single global frame-of-ref.
+/// Accumulates all the points and plots as a PointCloud.
+void MentisVisualHandle::publishFullPointCloud()
+{
+    assert( dvoHandle->isCameraIntrinsicsAvailable && dvoHandle->isNowFrameAvailable );
+    assert( dvoHandle->im_n.size() > 1 );
+    int level=1;
+
+    int lastIndx = dvoHandle->gop.size() - 1;
+    Eigen::Matrix3f gR = dvoHandle->gop.getGlobalRAt(lastIndx);
+    Eigen::Vector3f gT = dvoHandle->gop.getGlobalTAt(lastIndx);
+    if( dvoHandle->gop.isKeyFrameAt(lastIndx) == false )
+        return;
+
+    //
+    // Make 3d point of this frame
+    float scaleFac = (float)pow(2,-level);
+    Eigen::MatrixXf& _im = dvoHandle->im_n[level];
+    Eigen::MatrixXf& _dim = dvoHandle->dim_n[level];
+
+
+    Eigen::MatrixXf XX = Eigen::MatrixXf::Constant( 3, _im.rows()*_im.cols(), 1.0f );
+    Eigen::MatrixXf XX_int = Eigen::MatrixXf::Zero( 1, _im.rows()*_im.cols() ); //corresponding intensities
+
+
+    int nC = 0;
+    for( int yy=0 ; yy<_im.rows() ; yy++ )
+    {
+        for( int xx=0 ; xx<_im.cols() ; xx++ )
+        {
+            float Z = _dim(yy,xx);
+            float intensity = _im(yy,xx);
+            if( Z < 10.0f )
+                continue;
+
+            Z /= 1000.0f; //convert to m
+            float X = Z * (xx-scaleFac*dvoHandle->cx) / (scaleFac*dvoHandle->fx);
+            float Y = Z * (yy-scaleFac*dvoHandle->cy) / (scaleFac*dvoHandle->fy);
+
+            XX(0,nC) = X;
+            XX(1,nC) = Y;
+            XX(2,nC) = Z;
+            XX_int(0,nC) = intensity;
+            nC++;
+        }
+    }
+
+
+
+    //
+    // transform it using odometry estimates
+    Eigen::MatrixXf cTRep;
+    igl::repmat(gT,1,XX.cols(),cTRep); // repeat cT col-wise (uses IGL library)
+    Eigen::MatrixXf XX_transformed = (gR *  XX)  +  cTRep ; //this is not in global frame
+
+
+
+    //
+    // merge transformed points with previous points
+    for( int i=0 ; i<nC ; i++ )
+    {
+        geometry_msgs::Point32 pt;
+        pt.x = XX_transformed(0,i);
+        pt.y = XX_transformed(1,i);
+        pt.z = XX_transformed(2,i);
+        pcl_msg.points.push_back(pt);
+
+        all_intensities.values.push_back( XX_int(0,i));
+    }
+
+
+    //
+    // publish point-cloud
+    pcl_msg.header.frame_id = rviz_frame_id;
+    pcl_msg.header.stamp = ros::Time::now();
+
+    pcl_msg.channels.clear();
+    pcl_msg.channels.push_back(all_intensities);
+    pub_pc.publish( pcl_msg );
+
+
 
 }
 

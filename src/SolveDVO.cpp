@@ -20,8 +20,9 @@ SolveDVO::SolveDVO()
     // Setting up some global constants
     grad_thresh = 10; //this is currently not used
     ratio_of_visible_pts_thresh = 0.8;
-    laplacianThreshExitCond = 10.0f;
+    laplacianThreshExitCond = 3.0f;
     psiNormTerminationThreshold = 1.0E-7;
+    trustRegionHyperSphereRadius = 0.001;
 
 
 
@@ -548,8 +549,9 @@ void SolveDVO::setNowFrame()
 
 void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, Eigen::Vector3f& cT,
                                      Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
-                                     Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float& finalVisibleRatio)
+                                     Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float& finalVisibleRatio, bool noWait=true)
 {
+    bool waitPerItr = noWait;
 
     assert( level >= 0 && level <= 3 );
     assert( maxIterations > 0 );
@@ -576,9 +578,9 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
     Eigen::VectorXf bestEpsilon;
     Eigen::MatrixXf bestReprojections;
 
-    float lambda = 3.0E7    ;
-    float BETA = 0.8;
-    Eigen::VectorXf s = Eigen::VectorXf::Zero(6);
+    float stepLength=3E-8;
+    float BETA = 0.5;
+    Eigen::VectorXf descentDirection = Eigen::VectorXf::Zero(6);
     for( int itr=0 ; itr< maxIterations ; itr++ )
     {
 
@@ -647,17 +649,35 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
         //      Input  : Jcbian & JTW, epsilon          //
         //      Output : psi                            //
         //////////////////////////////////////////////////
-        if( prevTotalEpsilon < currentTotalEpsilon ){ //divergence
-            lambda *= 3.0;
+        /* // LM heuristic
+        if( prevTotalEpsilon < currentTotalEpsilon ){
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+            ROS_INFO( "Registed INCREASE of energy at this iteration"); // divergence ... bad (so reduce step length )
+#endif
+            stepLength =(stepLength<1E-9)?stepLength: stepLength / 2.0f; //done to avoid floating point problems
+            //BETA = 0.25;
         }
-        else
-            lambda /= 1.5;
+        else {
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+            ROS_INFO( "Registed DECREASE of energy at this iteration"); // convergence ... good (so increase step length)
+#endif
+            stepLength =(stepLength>1E9)?stepLength: stepLength * 2.0f; //done to avoid floating point problems
+            //BETA = 0.75;
+        }*/
+
+        // Square summable but not summable seq of step-length (as recommended in Boyd's documents)
+        stepLength = 1.0E-6 / (itr+1);
 
 
         Eigen::VectorXf g = JTW * epsilon; // subgradient of \Sum{ V^2(.) }
-        s = (1-BETA)*g + BETA*s;
+        descentDirection = (1-BETA)*g + BETA*descentDirection;
 
-        Eigen::VectorXf psi = - 1/lambda* s;
+        Eigen::VectorXf psi = - stepLength* descentDirection;
+
+
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+        ROS_INFO_STREAM( "psi : (raw) [ "<< psi.transpose() << "]\n"<< "|psi| : "<< psi.norm() );
+#endif
 
 
         // Possible projection of `psi` on a hyper sphere (of radius \delta)
@@ -665,20 +685,25 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
         float norm = psi.norm();
         float rot_norm = psi.head(3).norm();   // rotation norm
         float trans_norm = psi.tail(3).norm(); //translation norm
-        if(norm > 0.01f ) //rotation component
+        if(norm > trustRegionHyperSphereRadius ) //total component
         {
-            psi = psi / norm * 0.01f;
+            psi = psi / norm * trustRegionHyperSphereRadius;
         }
-
-//        if( trans_norm > 0.001f ) //translation component
+//        if( rot_norm > 0.00001f ) //rotation component
 //        {
-//            psi.tail(3) = psi.tail(3) / trans_norm * 0.1f;
+//            psi.tail(3) = psi.tail(3) / rot_norm * 0.00001f;
+//        }
+//        if( trans_norm > 0.01f ) //translation component
+//        {
+//            psi.head(3) = psi.head(3) / trans_norm * 0.01f;
 //        }
 
 
 
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
-        //ROS_INFO_STREAM( "psi : [ "<< psi.transpose() << "]\n"<< "|psi| : "<< psi.norm() );
+        ROS_INFO_STREAM( "psi : (after trust region constraint) [ "<< psi.transpose() << "]\n"<< "|psi| : "<< psi.norm() );
+        ROS_INFO_STREAM( "descentDirection : [ "<< descentDirection.transpose() << "]" );
+        ROS_INFO( "alpha_k : %f", stepLength );
         ROS_INFO_STREAM( "|psi| : "<< psi.norm() );
 #endif
 
@@ -695,7 +720,12 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
         //
         // Early Termination ?
         if( psi.norm() < psiNormTerminationThreshold )
+        {
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+            ROS_INFO( "Early Termination. psi.norm() {%f} smaller than %f", psi.norm(), psiNormTerminationThreshold );
+#endif
             break;
+        }
 
         //if( (itr - bestItrNumber) > 10 ) //if no betterment in function value for X iterations then give up
         //    break;
@@ -732,17 +762,11 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
 
 
 
-#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
-        processResidueHistogram( epsilon, false );
-#endif   //__SHOW_REPROJECTIONS_EACH_ITERATION__
-
-
-
-
-#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__DISPLAY_ONLY
         //
         // DISPLAY
         //printRT( cR, cT, "Updated cR,cT");
+        if( waitPerItr )
         {
         if( __REPROJECTION_LEVEL == level ){
         Eigen::MatrixXi reprojectedMask = Eigen::MatrixXi::Zero(_now.rows(), _now.cols());
@@ -759,9 +783,11 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
 
 
 
-        visualizeEnergyProgress( energyAtEachIteration, bestItrNumber, (energyAtEachIteration.rows() < 300)?4:2 );
+        visualizeEnergyProgress( energyAtEachIteration, bestItrNumber, (energyAtEachIteration.rows() < 300)?4:1 );
+        processResidueHistogram( epsilon, false );
 
 
+        ROS_ERROR( "Waiting in runIterations (#%d)... ", itr );
         char ch = cv::waitKey(0);
         if( ch == 27 ){ // ESC
             ROS_ERROR( "ESC pressed quitting...");
@@ -769,7 +795,10 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
         }
         if( ch == 'b')
             break;
+        if( ch == 'c') // do not wait after this
+            waitPerItr = false;
         }
+
         }
         //
         // END DISPLAY
@@ -793,7 +822,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
     ROS_DEBUG( "Best Energy Achieved (%f) in iteration #%d with visibility-ratio of %2.2f", bestTotalEpsilon, bestItrNumber, finalVisibleRatio );
     ROS_DEBUG_STREAM( "final R :\n"<< cR );
     ROS_DEBUG_STREAM( "final T :\n"<< cT.transpose() );
-    ROS_DEBUG("-*-*-*-*- End of Gauss-Newton Iterations (level=%d) -*-*-*-*- ", level );
+    ROS_INFO("-*-*-*-*- End of Gauss-Newton Iterations (level=%d) -*-*-*-*- ", level );
 
 
 
@@ -1033,8 +1062,10 @@ float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &
 /// where, sigma^2 = 1/n \sum_i r^2 6/ ( 5 + r/sigma )^2 ....iterative
 float SolveDVO::getWeightOf( float r)
 {
-    //return 5.0 / (6.0 + r*r/.25 );
-    return (float)std::exp( -fabs(r/9) );
+    //return 1.0f;
+    //return 1.0f + r*r;
+    return 6.0 / (6.0 + r*r/.25 );
+    //return (float)std::exp( -fabs(r/9) );
 }
 
 
@@ -1657,7 +1688,7 @@ void SolveDVO::computeDistTransfrmOfNow()
 void SolveDVO::loop()
 {
 
-    /*
+/*
       // Dry Loop
     long nFrame = 0;
     ros::Rate rate(30);
@@ -1677,7 +1708,7 @@ void SolveDVO::loop()
             rate.sleep();
 
     }
-    */
+*/
 
 
     cv::Mat debugScratchBoard = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
@@ -1748,13 +1779,18 @@ void SolveDVO::loop()
 
         ros::Time jstart = ros::Time::now();
         //runIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-        runIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-        runIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        //runIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        if( nFrame < 74 )
+        runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio, false );
+        else
+        runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+
         ros::Duration jdur = ros::Time::now() - jstart;
         iterationsComputeTime = jdur.toSec();
         avgIterationsTime = avgIterationsTime*(nFrame-1)/nFrame + iterationsComputeTime/nFrame;
         ROS_INFO( "Iterations done in %lf ms", iterationsComputeTime*1000 );
 
+        //mviz.publishFullPointCloud();
 
         // This was a critical-patch. Fixed a critical bug. The exit conditions need to be checked on the f_best and not all the epsilons.
         // Before this was done in gaussNewtonIteration which was obiviously not correct as it checkd the threshold for the last iteration
@@ -1765,9 +1801,10 @@ void SolveDVO::loop()
         float b_cap = processResidueHistogram( epsilonVec, true );
 #endif //__ENABLE_DISPLAY__
 
+        int reasonForChange=0;
+
 
         // These 3 following IFs will check if it is time to change the reference frame
-        int reasonForChange=0;
         if( b_cap > laplacianThreshExitCond ) {
             ROS_ERROR( "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
             snprintf( signalGetNewRefImageMsg, 450, "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
@@ -1791,8 +1828,12 @@ void SolveDVO::loop()
         }
 
 
-        //if( (nFrame % 9000000) == 0 )
-        if( signalGetNewRefImage == true )
+
+
+
+
+        //if( signalGetNewRefImage == true )
+        if( (nFrame % 5) == 0 )
         {
             ROS_INFO( "!! NEW REFERENCE FRAME !!");
             ROS_INFO( "Reason : %s", signalGetNewRefImageMsg );
@@ -1802,7 +1843,7 @@ void SolveDVO::loop()
             setRefFrame();
             preProcessRefFrame();
 
-            gop.pushAsKeyFrame(nFrame, reasonForChange, cR, cT );
+            gop.pushAsKeyFrame(nFrame, 2/*reasonForChange*/, cR, cT );
 
             // reset pose-guess with respect to newly changed reference frame
             cR = Eigen::Matrix3f::Identity();
@@ -1828,14 +1869,23 @@ void SolveDVO::loop()
             int xlevel = 0;
             Eigen::MatrixXi reprojectedMask = Eigen::MatrixXi::Zero(im_n[xlevel].rows(), im_n[xlevel].cols());
             cordList_2_mask(reprojections, reprojectedMask);
-            cv::Mat outIm, outImGray, outRef;
+            cv::Mat outIm,outIm2, outImGray, outRef;
             sOverlay(now_distance_transform[xlevel], reprojectedMask, outIm, cv::Vec3b(0,255,0));
+
+//            // original now edges and reprojected edges on a black bg
+//            sOverlay(im_n[xlevel], now_edge_map[xlevel], outIm2, cv::Vec3b(255,255,255));
+//            Eigen::MatrixXf __tmmmppp; cv::cv2eigen(outIm2, __tmmmppp);
+//            cv::Mat xOutimnn;
+//            sOverlay(__tmmmppp, reprojectedMask, xOutimnn, cv::Vec3b(0,255,0));
+//            cv::imshow( "now edges and reprojected edges on now", xOutimnn );
+
+
             sOverlay(im_n[xlevel], reprojectedMask, outImGray, cv::Vec3b(0,255,0));
 
             sOverlay(im_r[xlevel], ref_edge_map[xlevel], outRef, cv::Vec3b(0,0,255));
 
             cv::imshow( "reprojection with cR,cT (on now dist-tran", outIm);
-            cv::imshow( "reprojection with cR,cT (on now gray", outImGray);
+            //cv::imshow( "reprojection with cR,cT (on now gray", outImGray);
             cv::imshow( "selected edges on ref", outRef);
             visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
 
@@ -1843,7 +1893,7 @@ void SolveDVO::loop()
             //printFrameIndex2Scratch(debugScratchBoard, nFrame, lastRefFrame, lastRefFrameComputeTime, gaussNewtonIterationsComputeTime, true );
             //cv::imshow( "scratBoard", debugScratchBoard );
 
-            visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:2 );
+            visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:1 );
 
 
 
@@ -1874,7 +1924,7 @@ void SolveDVO::loop()
 
         visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
 
-        //visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:2 );
+        visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:1 );
 
 
         char ch = cv::waitKey(1);
@@ -1894,6 +1944,7 @@ void SolveDVO::loop()
 
         ros::Time pubstart = ros::Time::now();
         mviz.publishGOP();
+        //mviz.publishFullPointCloud();
         ros::Duration pubdur = ros::Time::now() - pubstart;
         double displayTime = pubdur.toSec();
         ROS_INFO( "Display done in %lf ms", displayTime*1000 );
@@ -1939,7 +1990,7 @@ void SolveDVO::loopFromFile()
     //const char * folder = "TUM_RGBD/fr1_xyz";
     const char * folder = "xdump";
 
-    const int START = 0;
+    const int START = 305;
     const int END = 3000;
 
 
@@ -1983,7 +2034,8 @@ void SolveDVO::loopFromFile()
         }
 
 
-        if( signalGetNewRefImage == true )
+        //if( signalGetNewRefImage == true )
+        if( iFrameNum%5 == 0 )
         {
             ROS_INFO( "!! NEW REFERENCE FRAME !!");
             ROS_INFO( "Reason : %s", signalGetNewRefImageMsg );
@@ -1993,7 +2045,7 @@ void SolveDVO::loopFromFile()
             // before changing the reference-frame estimate itz pose
 //            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
 //            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-            runIterations(0, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             }
 
             keyR = nR;
@@ -2016,7 +2068,7 @@ void SolveDVO::loopFromFile()
             setNowFrame();
 
             ros::Time jstart = ros::Time::now();
-            runIterations(0, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             ros::Duration jdur = ros::Time::now() - jstart;
             gaussNewtonIterationsComputeTime = jdur.toSec();
             ROS_INFO( "Iterations done in %lf ms", gaussNewtonIterationsComputeTime*1000 );
@@ -2076,7 +2128,7 @@ void SolveDVO::loopFromFile()
             cv::imshow( "selected edges on ref", outRef);
             visualizeDistanceResidueHeatMap(im_n[xlevel], reprojectedMask, now_distance_transform[xlevel] );
 
-            visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:2 );
+            visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:1 );
 
 
             processResidueHistogram( epsilonVec, false );
@@ -2085,6 +2137,7 @@ void SolveDVO::loopFromFile()
             cv::moveWindow("reprojection with cR,cT (on now gray"     , 1150, 600 );
             cv::moveWindow("selected edges on ref", 1500, 600 );
             }
+            char ch = cv::waitKey(__ENABLE_DISPLAY__);
 
 
             ROS_ERROR( "End of Iterations Display.....!");

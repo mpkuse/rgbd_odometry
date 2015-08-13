@@ -102,7 +102,7 @@ catkin_package(CATKIN_DEPENDS message_runtime)
 ###########
 ## Build ##
 ###########
-set(CMAKE_CXX_FLAGS "-mavx -fpermissive -ffast-math")
+set(CMAKE_CXX_FLAGS "-g -mavx -fpermissive -ffast-math")
 
 # CUDA flags
 # help - http://choorucode.com/2013/09/13/how-to-build-cuda-programs-using-cmake/

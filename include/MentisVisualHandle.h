@@ -21,6 +21,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Path.h>
 
+
 #include <Eigen/Dense>
 #include <igl/repmat.h>
 
@@ -54,6 +55,9 @@ public:
     // Publishing from GOP
     void publishGOP();
 
+    // Full Point Cloud (This is being a bit ambitious)
+    void publishFullPointCloud();
+
 
 private:
 
@@ -82,6 +86,11 @@ private:
 
     //helpers
     void matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose);
+
+
+    // Global Point cloud related
+    sensor_msgs::PointCloud pcl_msg;
+    sensor_msgs::ChannelFloat32 all_intensities;
 
 };
 

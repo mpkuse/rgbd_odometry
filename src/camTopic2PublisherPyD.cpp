@@ -26,6 +26,8 @@
 const char * outFolder = "xdump";
 
 
+//#define __WRITE_CALIBRATION_DATA
+
 
 //
 // Subscriber Callbacks
@@ -83,6 +85,12 @@ void depthRcvd( const sensor_msgs::ImageConstPtr& msg )
 // Distortion correction
 void undistortFrame( cv::Mat& src, cv::Mat& dst )
 {
+    if( isCameraParamsRcvd == false )
+    {
+        ROS_ERROR_ONCE( "No Camera Params topic...not undistorting");
+        src.copyTo(dst);
+        return;
+    }
     cv::Mat undistorted;
     cv::undistort(src, undistorted, cameraMatrix, distCoeff );
     undistorted.copyTo(dst);
@@ -94,6 +102,12 @@ void undistortFrame( cv::Mat& src, cv::Mat& dst )
 
 void undistortDFrame( cv::Mat& src, cv::Mat& dst )
 {
+    if( isCameraParamsRcvd == false )
+    {
+        ROS_ERROR_ONCE( "No Camera Params topic...not undistorting");
+        src.copyTo(dst);
+        return;
+    }
     cv::Mat undistorted;
     cv::undistort(src, undistorted, cameraMatrix, distCoeff );
     undistorted.copyTo(dst);
@@ -411,6 +425,8 @@ int main( int argc, char ** argv )
         fbin.close();
 #endif
 
+
+#ifdef __WRITE_CALIBRATION_DATA
     //
     // Write calibration file
     if( isCameraParamsRcvd ) {
@@ -431,7 +447,7 @@ int main( int argc, char ** argv )
     }
     else
         ROS_ERROR( "Camera Params file not written...!");
-
+#endif
 
 
 }

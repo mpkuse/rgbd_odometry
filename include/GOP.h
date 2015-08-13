@@ -54,7 +54,8 @@ private:
 
 
 
-/// basically contains a vector of `GOPElement`
+/// Basically contains a vector of `GOPElement`. Need to provide the incremental poses at each frames and
+/// denote if it is a keyframe. This class converts all relative poses to global poses
 class GOP
 {
 public:

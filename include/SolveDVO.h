@@ -111,13 +111,19 @@ private:
     bool isFrameAvailable;
 
 
+    //
+    // Previously set now frames (added 14th Aug, 2015)
+    std::vector<Eigen::MatrixXf> p_now_framemono, p_now_depth; ///< previously set now image pyramid
+    bool isPrevFrameAvailable;
+    void setPrevFrameAsRefFrame(); // sets (p_now_framemono, p_now_depth) as ref frame
+
 
     //
     // Now & Ref Frames
     std::vector<Eigen::MatrixXf> im_n, dim_n; ///< Now frames
     std::vector<Eigen::MatrixXf> im_r, dim_r; ///< Reference frames
-    void setRefFrame();
-    void setNowFrame();
+    void setRcvdFrameAsRefFrame();
+    void setRcvdFrameAsNowFrame();
     bool isNowFrameAvailable, isRefFrameAvailable;
 
 
@@ -140,7 +146,7 @@ private:
     //void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
     void runIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT,
                                 Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
-                                Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float & finalVisibleRatio, bool noWait );
+                                Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float & finalVisibleRatio );
     float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
 

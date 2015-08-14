@@ -306,9 +306,9 @@ void MentisVisualHandle::publishGOP()
         if( dvoHandle->gop.isKeyFrameAt(i) )
         {
             marker.id = i;
-            marker.scale.x = .03;
-            marker.scale.y = .03;
-            marker.scale.z = .03;
+            marker.scale.x = .02;
+            marker.scale.y = .02;
+            marker.scale.z = .02;
 
             int reason = dvoHandle->gop.getReasonAt(i);
             switch(reason)
@@ -337,6 +337,11 @@ void MentisVisualHandle::publishGOP()
                 marker.color.b = 1.0f;
                 marker.color.a = 1.0f;
                 break;
+            default:
+                marker.color.r = 0.0f;
+                marker.color.g = 0.0f;
+                marker.color.b = 1.0f;
+                marker.color.a = 1.0f;
 
             }
             markerAry.markers.push_back(marker);

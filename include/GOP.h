@@ -38,6 +38,7 @@ public:
     bool isKeyFrame();
     int getReason();
 
+    void updateAsKeyFrame(int reason );
 private:
     bool keyFrame;
     int frameId;
@@ -65,8 +66,12 @@ public:
     void pushAsOrdinaryFrame(int frameNum, Eigen::Matrix3f cR, Eigen::Vector3f cT );
     void pushAsKeyFrame(int frameNum, int reason, Eigen::Matrix3f cR, Eigen::Vector3f cT );
 
+    void updateMostRecentToKeyFrame(int reason);
+
+
     int size();
 
+    // Getters
     const geometry_msgs::Pose &getGlobalPoseAt(int i );
     const Eigen::Matrix3f &getGlobalRAt(int i );
     const Eigen::Vector3f &getGlobalTAt(int i );

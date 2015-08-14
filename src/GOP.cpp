@@ -81,6 +81,12 @@ int GOPElement::getReason()
         return -1;
 }
 
+void GOPElement::updateAsKeyFrame(int reason)
+{
+    keyFrame = true;
+    reason_of_change = reason;
+}
+
 
 /// @brief Given the rotation and translation matrix convert to ros Pose representation
 /// @param[in] rot : 3x3 rotation matrix
@@ -166,6 +172,15 @@ void GOP::pushAsKeyFrame(int frameNum, int reason, Eigen::Matrix3f cR, Eigen::Ve
     // update this->`lastKeyFrame` pose
     lastKeyFr_R = global_R;
     lastKeyFr_T = global_T;
+}
+
+void GOP::updateMostRecentToKeyFrame( int reason )
+{
+    int mostRecentIndx = gopVector.size() - 1;
+    lastKeyFr_R = gopVector[mostRecentIndx].getR();
+    lastKeyFr_T = gopVector[mostRecentIndx].getT();
+
+    gopVector[mostRecentIndx].updateAsKeyFrame(reason);
 }
 
 /// Returns size of the gop Vector

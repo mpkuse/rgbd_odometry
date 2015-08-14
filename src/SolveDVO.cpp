@@ -6,7 +6,7 @@ SolveDVO::SolveDVO()
 {
 
     isCameraIntrinsicsAvailable = false;
-    isFrameAvailable = false;
+    isFrameAvailable = false; isPrevFrameAvailable = false;
     isRefFrameAvailable = false;
     isNowFrameAvailable = false;
     isJacobianComputed = false;
@@ -470,6 +470,7 @@ void SolveDVO::cordList_2_mask(Eigen::MatrixXf &list, Eigen::MatrixXi &mask)
 void SolveDVO::imageArrivedCallBack( rgbd_odometry::RGBDFramePydConstPtr msg )
 {
     ROS_INFO_STREAM_ONCE( "1st RGBD frame received. Will continue receiving but not report anymore on this");
+
     isFrameAvailable=false;
 
 
@@ -513,7 +514,7 @@ void SolveDVO::imageArrivedCallBack( rgbd_odometry::RGBDFramePydConstPtr msg )
 }
 
 /// @brief Sets the rcvd frame as reference frame
-void SolveDVO::setRefFrame()
+void SolveDVO::setRcvdFrameAsRefFrame()
 {
     assert( isFrameAvailable );
     assert( rcvd_framemono.size() > 0  && rcvd_depth.size() > 0 );
@@ -526,15 +527,57 @@ void SolveDVO::setRefFrame()
 
 
     computeDistTransfrmOfRef();
+    // computeDistTransfromOfRef writes to following global variables
+    //    ref_distance_transform
+    //    ref_edge_map
+    //    ref_DT_gradientX
+    //    ref_DT_gradientY
+
+
+}
+
+
+/// @brief Sets the previous frame as reference frame. Uses `p_now_framemono` & `p_now_depth`
+void SolveDVO::setPrevFrameAsRefFrame()
+{
+    assert( isPrevFrameAvailable );
+    assert( rcvd_framemono.size() > 0  && rcvd_depth.size() > 0 );
+
+    if( isPrevFrameAvailable == false )
+        ROS_ERROR( "n-1 frame not available, can/must cause SIGSEGV" );
+
+    isRefFrameAvailable = false;
+    im_r = p_now_framemono;
+    dim_r = p_now_depth;
+    isRefFrameAvailable = true;
+    isJacobianComputed = false;
+
+
+    computeDistTransfrmOfRef();
+    // computeDistTransfromOfRef writes to following global variables
+    //    ref_distance_transform
+    //    ref_edge_map
+    //    ref_DT_gradientX
+    //    ref_DT_gradientY
+
 
 }
 
 
 /// @brief Sets the rcvd frame as now frame
-void SolveDVO::setNowFrame()
+void SolveDVO::setRcvdFrameAsNowFrame()
 {
     assert( isFrameAvailable && "FRAME NOT AVAILABLE" );
     assert( rcvd_framemono.size() > 0  && rcvd_depth.size() > 0 );
+
+    //store current now frame as prev-now frame
+    if( isNowFrameAvailable )
+    {
+        isPrevFrameAvailable = false;
+        p_now_framemono = im_n;
+        p_now_depth = dim_n;
+        isPrevFrameAvailable = true;
+    }
 
     isNowFrameAvailable = false;
     im_n = rcvd_framemono;
@@ -542,6 +585,12 @@ void SolveDVO::setNowFrame()
     isNowFrameAvailable = true;
 
     computeDistTransfrmOfNow();
+    // computeDistTransfrmOfNow writes to following variables
+    //    now_distance_transform
+    //    now_edge_map
+    //    now_DT_gradientX
+    //    now_DT_gradientY
+
 }
 
 
@@ -549,9 +598,8 @@ void SolveDVO::setNowFrame()
 
 void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, Eigen::Vector3f& cT,
                                      Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
-                                     Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float& finalVisibleRatio, bool noWait=true)
+                                     Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float& finalVisibleRatio)
 {
-    bool waitPerItr = noWait;
 
     assert( level >= 0 && level <= 3 );
     assert( maxIterations > 0 );
@@ -1743,7 +1791,7 @@ void SolveDVO::loop()
         if( (this->isFrameAvailable) )
         {
             ROS_INFO( "Setting 1st Frame as reference frame" );
-            setRefFrame();
+            setRcvdFrameAsRefFrame();
             preProcessRefFrame();
             lastRefFrame = 0;
 
@@ -1775,14 +1823,11 @@ void SolveDVO::loop()
 
 
 
-        setNowFrame();
+        setRcvdFrameAsNowFrame();
 
         ros::Time jstart = ros::Time::now();
         //runIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
         //runIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-        if( nFrame < 74 )
-        runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio, false );
-        else
         runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 
         ros::Duration jdur = ros::Time::now() - jstart;
@@ -1832,18 +1877,19 @@ void SolveDVO::loop()
 
 
 
-        //if( signalGetNewRefImage == true )
-        if( (nFrame % 5) == 0 )
+#ifdef __OLD__REF_UPDATE
+        if( signalGetNewRefImage == true )
+        //if( (nFrame % 5) == 0 )
         {
             ROS_INFO( "!! NEW REFERENCE FRAME !!");
             ROS_INFO( "Reason : %s", signalGetNewRefImageMsg );
 
 
             lastRefFrame = nFrame;
-            setRefFrame();
+            setRcvdFrameAsRefFrame();
             preProcessRefFrame();
 
-            gop.pushAsKeyFrame(nFrame, 2/*reasonForChange*/, cR, cT );
+            gop.pushAsKeyFrame(nFrame, reasonForChange, cR, cT );
 
             // reset pose-guess with respect to newly changed reference frame
             cR = Eigen::Matrix3f::Identity();
@@ -1856,6 +1902,43 @@ void SolveDVO::loop()
             //Currently estimated pose was not of a keyframe
             gop.pushAsOrdinaryFrame(nFrame, cR, cT);
         }
+#endif
+
+#define __NEW__REF_UPDATE
+
+#ifdef __NEW__REF_UPDATE
+        //currently estimate cR and cT are not as good.
+        // the 2nd condition here says that if 'n-1'th frame was already a reference frame than turn a blind eye to the warning on
+        // cR, cT being bad
+        if( (signalGetNewRefImage == true) && (lastRefFrame!=(nFrame-1)) )
+        {
+            // Set "n-1" as ref frame
+            lastRefFrame = nFrame-1;
+            setPrevFrameAsRefFrame();
+            preProcessRefFrame();
+
+
+            // Update "most recently" pushed GOP-frame as a keyframe
+            gop.updateMostRecentToKeyFrame(reasonForChange);
+
+            // reset cR, cT
+            cR = Eigen::Matrix3f::Identity();
+            cT = Eigen::Vector3f::Zero();
+            signalGetNewRefImage = false;
+            sprintf( signalGetNewRefImageMsg, "" );
+
+            //rerun iterations
+            runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+
+            // push GOP for now frame as ordinary frame
+            gop.pushAsOrdinaryFrame(nFrame, cR, cT);
+        }
+        else
+        {
+            //Currently estimated pose was acceptable wrt to lastRefFrame so push as ordinary
+            gop.pushAsOrdinaryFrame(nFrame, cR, cT);
+        }
+#endif
 
 
 
@@ -1872,13 +1955,10 @@ void SolveDVO::loop()
             cv::Mat outIm,outIm2, outImGray, outRef;
             sOverlay(now_distance_transform[xlevel], reprojectedMask, outIm, cv::Vec3b(0,255,0));
 
-//            // original now edges and reprojected edges on a black bg
-//            sOverlay(im_n[xlevel], now_edge_map[xlevel], outIm2, cv::Vec3b(255,255,255));
-//            Eigen::MatrixXf __tmmmppp; cv::cv2eigen(outIm2, __tmmmppp);
-//            cv::Mat xOutimnn;
-//            sOverlay(__tmmmppp, reprojectedMask, xOutimnn, cv::Vec3b(0,255,0));
-//            cv::imshow( "now edges and reprojected edges on now", xOutimnn );
-
+//            if( isPrevFrameAvailable ) {
+//                imshowEigenImage("n-1", p_now_framemono[xlevel]);
+//                imshowEigenImage("n", im_n[xlevel]);
+//            }
 
             sOverlay(im_n[xlevel], reprojectedMask, outImGray, cv::Vec3b(0,255,0));
 
@@ -1988,9 +2068,9 @@ void SolveDVO::loopFromFile()
     //const char * folder = "xdump_right2left"; //hard dataset
     //const char * folder = "xdump_left2right";
     //const char * folder = "TUM_RGBD/fr1_xyz";
-    const char * folder = "xdump";
+    const char * folder = "TUM_RGBD/fr2_desk";
 
-    const int START = 305;
+    const int START = 80;
     const int END = 3000;
 
 
@@ -2041,7 +2121,7 @@ void SolveDVO::loopFromFile()
             ROS_INFO( "Reason : %s", signalGetNewRefImageMsg );
 
             if( iFrameNum > START ) {
-                setNowFrame();
+                setRcvdFrameAsNowFrame();
             // before changing the reference-frame estimate itz pose
 //            gaussNewtonIterations(2, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
 //            gaussNewtonIterations(1, 20, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
@@ -2052,7 +2132,7 @@ void SolveDVO::loopFromFile()
             keyT = nT;
 
             lastRefFrame = iFrameNum;
-            setRefFrame();
+            setRcvdFrameAsRefFrame();
 
             preProcessRefFrame();
 
@@ -2065,7 +2145,7 @@ void SolveDVO::loopFromFile()
         }
         //else
         //{
-            setNowFrame();
+            setRcvdFrameAsNowFrame();
 
             ros::Time jstart = ros::Time::now();
             runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );

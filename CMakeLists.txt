@@ -9,6 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   image_transport
   roscpp
+  tf
   message_generation
 )
 find_package( message_generation )
@@ -209,6 +210,10 @@ add_executable( opencvpnp
     include/PnPOdometry.h
 )
 
+add_executable( tfPlay
+    src/tf.cpp
+)
+
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
@@ -273,6 +278,9 @@ add_dependencies(opencvpnp rgbd_odometry_generate_messages_cpp)
     ${catkin_LIBRARIES}
  )
 
+ target_link_libraries( tfPlay
+    ${catkin_LIBRARIES}
+ )
 
 #############
 ## Install ##

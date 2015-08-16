@@ -76,8 +76,8 @@ int main( int argc, char ** argv )
     ros::NodeHandle nh;
 
 
-    ros::Publisher pub = nh.advertise<nav_msgs::Path>("/dvo/GTpath", 1 );
-    ros::Publisher pub_pose = nh.advertise<geometry_msgs::PoseStamped>( "/dvo/GTpose", 1 );
+    ros::Publisher pub = nh.advertise<nav_msgs::Path>("/dvo/file/GTpath", 1 );
+    ros::Publisher pub_pose = nh.advertise<geometry_msgs::PoseStamped>( "/dvo/file/GTpose", 1 );
 
 
 

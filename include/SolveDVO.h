@@ -13,27 +13,40 @@
 
 #define EIGEN_DONT_PARALLELIZE
 
+// ROS Headers
 #include <ros/ros.h>
 #include <ros/console.h>
 
+#include <tf/tfMessage.h>
+#include <tf/transform_listener.h>
+
+#include<geometry_msgs/PoseStamped.h>
+#include<nav_msgs/Path.h>
+
+// Std Headers
 #include <fstream>
 #include <iostream>
 #include <string>
 
+// Linear Algebra
 #include <sophus/se3.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <Eigen/Sparse>
 #include <igl/repmat.h>
 
+// OpenCV Headers
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/eigen.hpp>
 
+// OpenCV-ROS interoperability headers
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.h>
 
 
+
+// RGBD custom message
 #include <rgbd_odometry/RGBDFramePyd.h>
 
 
@@ -49,11 +62,19 @@
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__DISPLAY_ONLY
 
-#define __ENABLE_DISPLAY__  1 //display in loop()
-//#define __MINIMAL_DISPLAY 1
+//#define __ENABLE_DISPLAY__  1 //display in loop()
+#define __MINIMAL_DISPLAY 1
 
 
 #define __REPROJECTION_LEVEL 0
+
+
+#define __TF_GT__ //Enable GT DISPLAY
+
+
+// Updating the reference frame
+#define __NEW__REF_UPDATE //throwing away wrong estimate
+//#define __OLD__REF_UPDATE //old naive logic
 
 
 #undef NDEBUG
@@ -235,18 +256,10 @@ private:
     MentisVisualHandle mviz;
 
 
-    //
-    //publish
-    void publishBowl();
-    void publishCurrentPointCloud(int level);
-    void publishReferencePointCloud( int level );
-    void publishPointCloud( SpaceCordList& spc, IntensityList &grays );
-    void publishPoseFinal( Eigen::MatrixXf rot, Eigen::VectorXf tran );
-    void publishPoseWrtRef( Eigen::MatrixXf rot, Eigen::VectorXf tran );
-
 
     //helpers for publishing
-    void matrixToPose( Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose &rospose );
+    void tfTransform2EigenMat( tf::StampedTransform& tr, Eigen::Matrix3f& R, Eigen::Vector3f& T );
+
 
 
     // constants

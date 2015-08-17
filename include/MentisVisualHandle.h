@@ -20,6 +20,8 @@
 #include <sensor_msgs/PointCloud.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Path.h>
+#include <tf/transform_listener.h>
+#include <tf/tfMessage.h>
 
 
 #include <Eigen/Dense>
@@ -58,6 +60,7 @@ public:
     // Full Point Cloud (This is being a bit ambitious)
     void publishFullPointCloud();
 
+    void publishFromTF(Eigen::Matrix3f &rot, Eigen::Vector3f &tran);
 
 private:
 
@@ -76,6 +79,9 @@ private:
     ros::Publisher pub_global_pose; ///< final pose relative to first frame (ie. global frame)
     ros::Publisher pub_path; ///< publish path (as evaluated by DVO)
 
+    ros::Publisher pub_gt_pose; ///< ground-truth pose
+    ros::Publisher pub_gt_path; ///< ground-truth path
+
     //debug publishers
     ros::Publisher pub_debug_keyFrames; ///< publish keyFrame-locations as spheres
 
@@ -83,9 +89,14 @@ private:
     // Past Pose Data
     std::vector<geometry_msgs::PoseStamped> poseAry;
 
+    //
+    // All GT pose data
+    std::vector<geometry_msgs::PoseStamped> gtPoseAry;
+
 
     //helpers
     void matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose);
+
 
 
     // Global Point cloud related

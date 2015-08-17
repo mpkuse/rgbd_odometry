@@ -1730,13 +1730,19 @@ void SolveDVO::computeDistTransfrmOfNow()
     isNowDistTransfrmAvailable = true;
 }
 
-
 /// @brief The event loop. Basically an ever running while with ros::spinOnce()
 /// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
 void SolveDVO::loop()
 {
 
 /*
+#ifdef __TF_GT__
+    ROS_INFO( "Will Also publish GT pose (wrt 1st frame) from tf-data");
+    tf::TransformListener tflis;
+    Eigen::Matrix3f _tf_Rf, _tf_Rc, _tf_Rc_f;
+    Eigen::Vector3f _tf_Tf, _tf_Tc, _tf_Tc_f;
+#endif //__TF_GT__
+
       // Dry Loop
     long nFrame = 0;
     ros::Rate rate(30);
@@ -1746,18 +1752,56 @@ void SolveDVO::loop()
         if( !(this->isFrameAvailable) )
             continue;
 
-        imshowEigenImage( "current Frame", rcvd_framemono[0] );
+
+
+        setRcvdFrameAsNowFrame();
+
+
+#ifdef __TF_GT__
+        tf::StampedTransform transform;
+        try{
+            tflis.lookupTransform("/world", "/openni_rgb_optical_frame", ros::Time(0), transform );
+        }
+        catch(tf::TransformException &ex) {
+            ROS_ERROR("NO TF Message");
+        }
+
+
+        if( nFrame == 0 )
+        {
+            tfTransform2EigenMat(transform, _tf_Rf, _tf_Tf);
+        }
+
+        tfTransform2EigenMat(transform, _tf_Rc, _tf_Tc);
+        _tf_Tc_f = _tf_Rf.transpose() * ( _tf_Tc - _tf_Tf );
+        _tf_Rc_f = _tf_Rf.transpose() * _tf_Rc;
+        mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f);
+
+
+#endif
+
+
+        imshowEigenImage( "current Frame", im_n[0] );
         cv::waitKey(1);
-//        char ch = cv::waitKey(__ENABLE_DISPLAY__);
-//        if( ch == 27 ){ // ESC
-//            ROS_ERROR( "ESC pressed quitting...");
-//            exit(1);
-//        }
-            rate.sleep();
+        //        char ch = cv::waitKey(__ENABLE_DISPLAY__);
+        //        if( ch == 27 ){ // ESC
+        //            ROS_ERROR( "ESC pressed quitting...");
+        //            exit(1);
+        //        }
+        isFrameAvailable = false;
+        rate.sleep();
+        nFrame++;
 
     }
+
 */
 
+#ifdef __TF_GT__
+    ROS_INFO( "Will Also publish GT pose (wrt 1st frame) from tf-data");
+    tf::TransformListener tflis;
+    Eigen::Matrix3f _tf_Rf, _tf_Rc, _tf_Rc_f;
+    Eigen::Vector3f _tf_Tf, _tf_Tc, _tf_Tc_f;
+#endif //__TF_GT__
 
     cv::Mat debugScratchBoard = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
     double iterationsComputeTime=0.0;
@@ -1800,6 +1844,25 @@ void SolveDVO::loop()
             gop.pushAsKeyFrame(nFrame, 1, cR, cT );
 
 
+#ifdef __TF_GT__
+            //note down the pose of 1st frame of GT
+        tf::StampedTransform transform;
+        try{
+            tflis.lookupTransform("/world", "/openni_rgb_optical_frame", ros::Time(0), transform );
+        }
+        catch(tf::TransformException &ex) {
+            ROS_ERROR("NO TF Message");
+        }
+
+        tfTransform2EigenMat(transform, _tf_Rf, _tf_Tf);
+
+        tfTransform2EigenMat(transform, _tf_Rc, _tf_Tc);
+        _tf_Tc_f = _tf_Rf.transpose() * ( _tf_Tc - _tf_Tf );
+        _tf_Rc_f = _tf_Rf.transpose() * _tf_Rc;
+        mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f);
+#endif //__TF_GT__
+
+
             this->isFrameAvailable = false;
             nFrame++;
             ROS_INFO( "Done setting 1st received frame as reference..now will continue processing frames" );
@@ -1825,9 +1888,22 @@ void SolveDVO::loop()
 
         setRcvdFrameAsNowFrame();
 
+
+#ifdef __TF_GT__
+        // read the pose from TF
+        tf::StampedTransform transform;
+        try{
+            tflis.lookupTransform("/world", "/openni_rgb_optical_frame", ros::Time(0), transform );
+        }
+        catch(tf::TransformException &ex) {
+            ROS_ERROR("NO TF Message");
+        }
+#endif //__TF_GT__
+
+
         ros::Time jstart = ros::Time::now();
         //runIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-        //runIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        runIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
         runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 
         ros::Duration jdur = ros::Time::now() - jstart;
@@ -1904,7 +1980,6 @@ void SolveDVO::loop()
         }
 #endif
 
-#define __NEW__REF_UPDATE
 
 #ifdef __NEW__REF_UPDATE
         //currently estimate cR and cT are not as good.
@@ -2019,8 +2094,6 @@ void SolveDVO::loop()
 
 
         // Publishing
-        //mviz.publishPoseFinal(nR, nT);
-        //mviz.publishPath();
 
         ros::Time pubstart = ros::Time::now();
         mviz.publishGOP();
@@ -2029,6 +2102,15 @@ void SolveDVO::loop()
         double displayTime = pubdur.toSec();
         ROS_INFO( "Display done in %lf ms", displayTime*1000 );
 
+
+
+
+#ifdef __TF_GT__
+        tfTransform2EigenMat(transform, _tf_Rc, _tf_Tc);
+        _tf_Tc_f = _tf_Rf.transpose() * ( _tf_Tc - _tf_Tf );
+        _tf_Rc_f = _tf_Rf.transpose() * _tf_Rc;
+        mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f);
+#endif //__TF_GT__
 
 
 
@@ -2046,10 +2128,6 @@ void SolveDVO::loop()
         ros::spinOnce();
 
     }
-
-
-
-
 
 }
 
@@ -2286,6 +2364,18 @@ void SolveDVO::loopFromFile()
     }
 
     ROS_INFO( "Normal Exit...:)");
+}
+
+
+
+/// @brief Given the input transform in tf format, returns the Eigen R,T matrices
+void SolveDVO::tfTransform2EigenMat( tf::StampedTransform& tr, Eigen::Matrix3f& R, Eigen::Vector3f& T )
+{
+    Eigen::Quaternionf Qf(tr.getRotation().getW(), tr.getRotation().getX(), tr.getRotation().getY(), tr.getRotation().getZ() );
+    R = Qf.toRotationMatrix();
+    T(0) = tr.getOrigin().getX();
+    T(1) = tr.getOrigin().getY();
+    T(2) = tr.getOrigin().getZ();
 }
 
 

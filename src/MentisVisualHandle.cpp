@@ -41,6 +41,13 @@ void MentisVisualHandle::setNodeHandle(SolveDVO *const dvoH )
     pub_global_pose = dvoHandle->nh.advertise<geometry_msgs::PoseStamped>( "dvo/globalPose", 1 );
     pub_path = dvoHandle->nh.advertise<nav_msgs::Path>("/dvo/path", 1 );
 
+#ifdef __TF_GT__
+    //
+    /// Ground truth publisher
+    pub_gt_pose = nh.advertise<geometry_msgs::PoseStamped>( "/dvo/GTpose", 100 );
+    pub_gt_path = nh.advertise<nav_msgs::Path>("/dvo/GTpath", 10 );
+#endif //__TF_GT__
+
     //debug publishers
     pub_debug_keyFrames = dvoHandle->nh.advertise<visualization_msgs::MarkerArray>("/dvo/debug/keyFrame", 1 );
 
@@ -271,7 +278,7 @@ void MentisVisualHandle::debug(Eigen::Matrix3f cR, Eigen::Vector3f cT)
 
 
 /// Publish data to RViz using only the GOP object
-/// Uses only dvoHandle->gop. This function renders the other visualization functions as deprecated.
+/// Uses only dvoHandle->gop. This function renders the other visualization function of estimated pose as deprecated.
 void MentisVisualHandle::publishGOP()
 {
     nav_msgs::Path pathMsg;
@@ -285,6 +292,10 @@ void MentisVisualHandle::publishGOP()
         st.pose = dvoHandle->gop.getGlobalPoseAt(i);
         pathMsg.poses.push_back( st );
     }
+
+
+    ROS_INFO( "Publishing Pose (gDVO) : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f", st.pose.orientation.x, st.pose.orientation.y, st.pose.orientation.z, st.pose.orientation.w,
+                     st.pose.position.x, st.pose.position.y, st.pose.position.z );
 
 
 #ifdef __DEBUG_FRAME_MARKER__
@@ -456,6 +467,43 @@ void MentisVisualHandle::publishFullPointCloud()
 
 }
 
+void MentisVisualHandle::publishFromTF(Eigen::Matrix3f &rot, Eigen::Vector3f &tran)
+{
+    geometry_msgs::Pose rospose;
+    matrixToPose(rot, tran, rospose);
+
+    float yaw, pitch, roll;
+    Eigen::Vector3f euler = rot.eulerAngles(2, 1, 0);
+    yaw = euler(0,0);
+    pitch = euler(1,0);
+    roll = euler(2,0);
+
+
+    ROS_INFO( "Publishing Pose (GT) : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f", rospose.orientation.x, rospose.orientation.y, rospose.orientation.z, rospose.orientation.w,
+                     rospose.position.x, rospose.position.y, rospose.position.z );
+//    ROS_INFO( "Roll-Pitch-Yaw :  [ %f %f %f ] (camera POV)", roll, pitch, yaw );
+
+
+    geometry_msgs::PoseStamped poseS;
+    poseS.header.frame_id = rviz_frame_id;
+    poseS.header.stamp = ros::Time::now();
+    poseS.pose = rospose;
+    gtPoseAry.push_back(poseS);
+
+    pub_gt_pose.publish( poseS );
+
+
+    nav_msgs::Path pathMsg;
+    pathMsg.header.frame_id = rviz_frame_id;
+    pathMsg.header.stamp = ros::Time::now();
+
+    for( int i=0 ; i<gtPoseAry.size() ; i++ )
+    {
+        pathMsg.poses.push_back( gtPoseAry[i] );
+    }
+    pub_gt_path.publish(pathMsg);
+}
+
 
 
 /// @brief Given the rotation and translation matrix convert to ros Pose representation
@@ -473,4 +521,15 @@ void MentisVisualHandle::matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran,
     rospose.orientation.y = quat.y();
     rospose.orientation.z = quat.z();
     rospose.orientation.w = quat.w();
+}
+
+
+/// @brief Given the input transform in tf format, returns the Eigen R,T matrices
+void tfTransform2EigenMat( tf::StampedTransform& tr, Eigen::Matrix3f& R, Eigen::Vector3f& T )
+{
+    Eigen::Quaternionf Qf(tr.getRotation().getW(), tr.getRotation().getX(), tr.getRotation().getY(), tr.getRotation().getZ() );
+    R = Qf.toRotationMatrix();
+    T(0) = tr.getOrigin().getX();
+    T(1) = tr.getOrigin().getY();
+    T(2) = tr.getOrigin().getZ();
 }

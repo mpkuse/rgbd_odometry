@@ -55,12 +55,12 @@ public:
     void debug( Eigen::Matrix3f cR, Eigen::Vector3f cT );
 
     // Publishing from GOP
-    void publishGOP();
+    void publishGOP(geometry_msgs::Pose &returnLatestPose);
 
     // Full Point Cloud (This is being a bit ambitious)
     void publishFullPointCloud();
 
-    void publishFromTF(Eigen::Matrix3f &rot, Eigen::Vector3f &tran);
+    void publishFromTF(Eigen::Matrix3f &rot, Eigen::Vector3f &tran, geometry_msgs::Pose &returnLatestPose);
 
 private:
 

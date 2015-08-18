@@ -289,7 +289,7 @@ int main( int argc, char ** argv )
 
 
 
-    ros::Rate rate(60); //Loop a little aggresively.
+    ros::Rate rate(90); //Loop a little aggresively.
     int nFrame=0;
     while( nh.ok() )
     {
@@ -411,11 +411,14 @@ int main( int argc, char ** argv )
 #endif //__ENABLE_IM_WRITE__
 
             nFrame++;
+            isRGBRcvd=false;
+            isDepthRcvd=false;
 
         }
 
-
+#ifdef __ENABLE_DISPLAY
         cv::waitKey(1);
+#endif
         rate.sleep();
     }
 

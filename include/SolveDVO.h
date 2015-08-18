@@ -27,6 +27,8 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <numeric>
+#include <vector>
 
 // Linear Algebra
 #include <sophus/se3.hpp>
@@ -62,8 +64,8 @@
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__DISPLAY_ONLY
 
-//#define __ENABLE_DISPLAY__  1 //display in loop()
-#define __MINIMAL_DISPLAY 1
+#define __ENABLE_DISPLAY__  1 //display in loop()
+//#define __MINIMAL_DISPLAY 1
 
 
 #define __REPROJECTION_LEVEL 0
@@ -102,6 +104,8 @@ class SolveDVO
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     SolveDVO();
+
+    void loopDry();
     void loop();
     void loopFromFile();
 
@@ -168,7 +172,6 @@ private:
     void runIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT,
                                 Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
                                 Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float & finalVisibleRatio );
-    float computeEpsilon( int level, Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::MatrixXf &A, Eigen::VectorXf &b );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
 
     float getWeightOf( float r );
@@ -182,9 +185,12 @@ private:
     void imageGradient( Eigen::MatrixXf &image, Eigen::MatrixXf& gradientX, Eigen::MatrixXf &gradientY );
     void to_se_3(Eigen::Vector3f& w, Eigen::Matrix3f& wx);
     void to_se_3(float w0, float w1, float w2, Eigen::Matrix3f& wx);
-    void exponentialMap(Eigen::VectorXf &psi, Eigen::Matrix3f &outR, Eigen::Vector3f &outT);
+    void exponentialMap(Eigen::VectorXf &psi, Eigen::Matrix3f &outR, Eigen::Vector3f &outT); //this is not in use. It is done with Sophus
     void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3b color);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
+    void printPose( geometry_msgs::Pose& rospose, const char * msg );
+    float getDriftFromPose( geometry_msgs::Pose& p1, geometry_msgs::Pose& p2 );
+    void  analyzeDriftVector( std::vector<float>& v );
     float processResidueHistogram( Eigen::VectorXf &residi, bool quite );
     void visualizeResidueHeatMap( Eigen::MatrixXf& eim, Eigen::MatrixXf& residueAt );
     void visualizeReprojectedDepth( Eigen::MatrixXf& eim, Eigen::MatrixXf& reprojDepth );
@@ -225,7 +231,6 @@ private:
     void imshowEigenImage(const char *winName, Eigen::MatrixXd& eim);
     void imshowEigenImage(const char *winName, Eigen::MatrixXf& eim);
     bool loadFromFile( const char * xmlFileName );
-    void printFrameIndex2Scratch( cv::Mat& scratch, long nowIndx, long lastRef, double time4Jacobian, double time4Iteration, bool cleanScratch  );
     std::string cvMatType2str(int type);
 
 

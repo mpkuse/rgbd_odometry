@@ -22,7 +22,7 @@ SolveDVO::SolveDVO()
     ratio_of_visible_pts_thresh = 0.8;
     laplacianThreshExitCond = 3.0f;
     psiNormTerminationThreshold = 1.0E-7;
-    trustRegionHyperSphereRadius = 0.001;
+    trustRegionHyperSphereRadius = 0.005;
 
 
 
@@ -151,33 +151,6 @@ bool SolveDVO::loadFromFile(const char *xmlFileName)
 }
 
 
-
-/// @brief Prints nowIndex and LastRef index to scratch image. __DEBUG__
-/// @param[in] cleanScratch : false indicate that overwrite board. True indicates that need to clean board
-void SolveDVO::printFrameIndex2Scratch(cv::Mat &scratch, long nowIndx, long lastRef, double time4Jacobian, double time4Iteration, bool cleanScratch=true)
-{
-    if( cleanScratch )
-        scratch = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
-
-    char a[100], b[100], c[100], d[100];
-    sprintf( a, "Now     : %d", nowIndx );
-    sprintf( b, "LastRef : %d", lastRef );
-    sprintf( c, "Jacobian : %lf ms", time4Jacobian*1000 );
-    sprintf( d, "Iterations : %lf ms", time4Iteration*1000 );
-    ROS_DEBUG( a );
-    ROS_DEBUG( b );
-
-    cv::putText( scratch, a, cv::Point(20, 20), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
-    cv::putText( scratch, b, cv::Point(10, 40), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
-
-    cv::putText( scratch, "Computation Time", cv::Point(10, 60), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
-
-    cv::putText( scratch, c, cv::Point(10, 80), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
-    cv::putText( scratch, d, cv::Point(10, 100), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, cv::Scalar(0,0,0) );
-
-
-
-}
 
 std::string SolveDVO::cvMatType2str(int type)
 {
@@ -601,6 +574,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
                                      Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float& finalVisibleRatio)
 {
 
+    bool waitPerItr = true;
     assert( level >= 0 && level <= 3 );
     assert( maxIterations > 0 );
     assert( isRefFrameAvailable && isNowFrameAvailable && isCameraIntrinsicsAvailable );
@@ -718,7 +692,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
 
 
         Eigen::VectorXf g = JTW * epsilon; // subgradient of \Sum{ V^2(.) }
-        descentDirection = (1-BETA)*g + BETA*descentDirection;
+        descentDirection = (1.0f-BETA)*g + BETA*descentDirection;
 
         Eigen::VectorXf psi = - stepLength* descentDirection;
 
@@ -866,11 +840,12 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
     finalVisibleRatio = bestRatioVisiblePts;
 
 
-
+#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__DISPLAY_ONLY
     ROS_DEBUG( "Best Energy Achieved (%f) in iteration #%d with visibility-ratio of %2.2f", bestTotalEpsilon, bestItrNumber, finalVisibleRatio );
     ROS_DEBUG_STREAM( "final R :\n"<< cR );
     ROS_DEBUG_STREAM( "final T :\n"<< cT.transpose() );
     ROS_INFO("-*-*-*-*- End of Gauss-Newton Iterations (level=%d) -*-*-*-*- ", level );
+#endif
 
 
 
@@ -880,51 +855,6 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
 /// @brief Updates the current estimates of R_{t}, T_{t} using R_h, T_h ie. the best deltas from previous iteration
 void SolveDVO::updateEstimates(Eigen::Matrix3f &cR, Eigen::Vector3f &cT, Eigen::Matrix3f &R_h, Eigen::Vector3f &T_h)
 {
-    /* old tries
-    ////         update (derived by me)
-    //        xRot.transposeInPlace();
-    //        cT = xRot * ( cT - xTrans );
-    //        cR = xRot * cR;
-
-    // update (new derivation by me), this one is correct --1
-    //        cT = xTrans + xRot.transpose() * cT;
-    //        cR = cR.transpose() * xRot;
-
-    // derivation -X (by me) --- works
-    //        cT = -cR.transpose() * ( cT - xTrans );
-    //        cR = xRot.transpose() * cR;
-    //        cR.transposeInPlace();
-
-
-    // X - but dont take inverse
-    //        cT = xRot.transpose() * ( cT - xTrans );
-    //        cR = xRot.transpose() * cR;
-
-    // derivation -2 (by me)
-    //        cT = xRot.transpose()*cT - xRot.transpose() * xTrans;
-    //        cR = xRot.transpose() * cR;
-
-    ////        // update as per SVO
-    //        cT = xRot.transpose() * ( cT - xTrans );
-    //        Eigen::Matrix3f tmpp = xRot.transpose() * cR;
-    //        cR = tmpp;
-
-
-    //        cT = xRot.transpose() * ( cT - xTrans );
-    //        cR = xRot.transpose() * cR;
-
-
-
-    //        cT = cR.transpose()*xRot.transpose()*xTrans - cR.transpose()*cT;
-    //        Eigen::Matrix3f tmpp = cR.transpose() * xRot.transpose();
-    //        cR = tmpp;
-
-
-    //    cT = -cR.transpose() * cT;
-    //    cR.transposeInPlace();
-    //    cT = R_h.transpose() * ( cT - T_h);
-    //    cR = R_h.transpose() * cR;
-    */
     ///////////////////////////////////////////////// 2nd Innings ///////////////////////////////
 
     // T_cap * delta
@@ -942,167 +872,6 @@ void SolveDVO::updateEstimates(Eigen::Matrix3f &cR, Eigen::Vector3f &cT, Eigen::
 
 }
 
-
-
-
-// returns the ratio of visible points and total available points
-float SolveDVO::computeEpsilon(int level, Eigen::Matrix3f &cR, Eigen::Vector3f &cT, Eigen::MatrixXf& A, Eigen::VectorXf& b)
-{
-    float scaleFac = (float)pow(2,-level);
-    Eigen::Matrix3f scaleMatrix = Eigen::Matrix3f::Identity();
-    scaleMatrix(0,0) = scaleFac;
-    scaleMatrix(1,1) = scaleFac;
-
-
-    SpaceCordList pts3d_ref = _spCord[level];
-    ImCordList orgImCords = _imCord[level];
-    IntensityList grays_ref = _intensities[level];
-    JacobianList jacob = _J[level];
-
-    Eigen::MatrixXf _now = im_n[level];
-//    ///// DISTANCE TRANSFORM of _now
-//    ROS_INFO( "distance transform");
-//    cv::Mat nownow, xnow, dTrn;
-//    cv::eigen2cv( _now, nownow );
-//    cv::Sobel( nownow, xnow, CV_8U, 1, 1 );
-//    xnow = 255 - xnow;
-//    cv::threshold( xnow, xnow, 250, 255, cv::THRESH_BINARY );
-//    cv::distanceTransform( xnow, dTrn, CV_DIST_L1, 5 );
-//    cv::normalize(dTrn, dTrn, 0.0, 1.0, cv::NORM_MINMAX);
-//    cv::imshow("edgeMap", xnow );
-//    cv::imshow("distanceTransform", dTrn );
-
-//    double min, max;
-//    cv::minMaxLoc(dTrn, &min, &max);
-//    ROS_INFO_STREAM( "min : "<< min << " max : "<< max << " dataTYpe : "<< cvMatType2str(dTrn.type()) );
-//    ///// END DISTANCE TRANSFORM
-
-    A = Eigen::MatrixXf::Zero(6,6);
-    b = Eigen::VectorXf::Zero(6);
-
-    Eigen::MatrixXf cTRep;
-    igl::repmat(cT,1,pts3d_ref.cols(),cTRep); // repeat cT col-wise (uses IGL library)
-    Eigen::MatrixXf pts3d_n = cR.transpose() * ( pts3d_ref - cTRep );
-
-
-#if defined(__SHOW_REPROJECTIONS_EACH_ITERATION__) || defined( __COLLECT_EPSILON_DEBUG__DATA_)
-    Eigen::MatrixXf pts3d_n_copy = pts3d_n; //note that this is a deep-copy
-
-    if( level == __REPROJECTION_LEVEL )
-    {
-        __now_roi_reproj = Eigen::MatrixXi::Zero(_now.rows(), _now.cols()); //init to zero
-        __residues = -Eigen::VectorXf::Ones( pts3d_ref.cols() ); // init to -1
-        __now_roi_reproj_values = -Eigen::MatrixXf::Ones(_now.rows(), _now.cols()); //init to -1
-        __reprojected_depth = -Eigen::MatrixXf::Ones( _now.rows(), _now.cols() );
-        __weights = -Eigen::MatrixXf::Ones(_now.rows(), _now.cols()); //init to -1
-
-    }
-#endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
-
-
-
-    float cumm_r=0.0;
-
-
-//    for( int i=0 ; i<3 ; i++ )
-//        pts3d_ref.row(i).array() -= cT(i); //translation
-//    Eigen::MatrixXf pts3d_n = cR.transpose() * pts3d_ref; // I have verified that this is exactly the same as `cR.transpose() * ( pts3d_ref - cTRep )`
-
-    //convert to inhomogeneous
-    Eigen::ArrayXXf lastRow_inv = pts3d_n.row(2).array().inverse();
-    for( int i=0 ; i<3 ; i++ )
-        pts3d_n.row(i).array() *= lastRow_inv;
-
-
-    Eigen::MatrixXf pts3d_un_normalized = scaleMatrix * K * pts3d_n;
-
-
-    int nPtVisible = 0;
-    int nSmalkDepthPoint = 0;
-    for( int i=0 ; i<pts3d_un_normalized.cols() ; i++ )
-    {
-        int xx = (int)pts3d_un_normalized(0,i);
-        int yy = (int)pts3d_un_normalized(1,i);
-
-
-        float r=0;
-
-
-        if( xx >=0 && xx<_now.cols() && yy>= 0 && yy <_now.rows() )
-        {
-
-
-            r = grays_ref(i) - _now(yy,xx);
-
-            float weight = getWeightOf( r );
-            if( pts3d_ref(2,i) < 10.0f ) // if the Z of a point is small ignore that point. Smaller Z (usually less than 400) are inaccurate
-                weight = 0.0;
-
-
-
-            A += (jacob[i].transpose() * jacob[i])*weight;
-
-
-#if defined(__SHOW_REPROJECTIONS_EACH_ITERATION__) || defined( __COLLECT_EPSILON_DEBUG__DATA_)
-            if( level == __REPROJECTION_LEVEL )
-            {
-#if defined(_IGNORE__NEAR_PTS_DISPLAY____)
-                if( pts3d_ref(2,i) >= 100.0f )
-#endif
-                {
-                    __now_roi_reproj(yy,xx) = 1;
-                    __now_roi_reproj_values(yy,xx) = (r>0)?r:-r;  // ===> absolute value of r
-                    __residues(i) = (r>0)?r:-r;
-                    __reprojected_depth(yy,xx) = pts3d_n_copy(2, i );
-                    __weights(yy,xx) = weight;
-                }
-
-            }
-#endif //__SHOW_REPROJECTIONS_EACH_ITERATION__
-
-//            //distance transform based penalty
-//            float proximityTerm = 200.0 * dTrn.at<float>(yy,xx);
-//            b += (r-proximityTerm)*jacob[i].transpose()*weight;
-
-
-            b += (r)*jacob[i].transpose()*weight;
-
-            nPtVisible++;
-        }
-//        else //if the point is out of scene, penalize this
-//        {
-////            r = 255.0;
-////            b += r*jacob[i].transpose();
-//            b += 255.0*jacob[i].transpose();
-//        }
-
-        cumm_r += (r*r);
-
-
-    }
-    b = -b;
-
-    ROS_DEBUG( "# Points (of ref-frame) visible in now-frame : %d", nPtVisible );
-    ROS_WARN_COND( nPtVisible < 50, "Too few pts visible. Signal end of iterations" );
-
-
-    ROS_INFO( "Cummulative squared residue : %f", cumm_r );
-
-
-
-
-
-
-    return (  (float)nPtVisible /  (float)pts3d_un_normalized.cols() );
-//    if( nPtVisible < 50 )
-//        return false;
-//    else
-//        return true;
-
-
-
-
-}
 
 
 /// Evals the weight as described in Cremers DVO paper
@@ -1335,7 +1104,34 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
     ROS_INFO( "6-DOF (%s) : %.4f %.4f %.4f %.4f : %.4f %.4f %.4f", msg, quat.x(), quat.y(), quat.z(), quat.w(), fT(0), fT(1), fT(2) );
     //ROS_INFO_STREAM( "fT : [" << fT.transpose() << "]" );
     //ROS_INFO( "____" );
-//#endif
+    //#endif
+}
+
+void SolveDVO::printPose(geometry_msgs::Pose &rospose, const char *msg)
+{
+    ROS_INFO( "%s : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f ]", msg, rospose.orientation.x, rospose.orientation.y, rospose.orientation.z, rospose.orientation.w,
+              rospose.position.x, rospose.position.y, rospose.position.z );
+}
+
+float SolveDVO::getDriftFromPose(geometry_msgs::Pose &p1, geometry_msgs::Pose &p2)
+{
+    float dx = p1.position.x - p2.position.x;
+    float dy = p1.position.y - p2.position.y;
+    float dz = p1.position.z - p2.position.z;
+
+    return (float)sqrt( dx*dx + dy*dy + dz*dz );
+}
+
+void SolveDVO::analyzeDriftVector(std::vector<float> &v)
+{
+    float mean = std::accumulate(v.begin(), v.end(), 0.0) / v.size();
+    std::nth_element(v.begin(), v.begin() + v.size()/2, v.end());
+    float median = v[v.size()/2];
+    float rms = (float)sqrt(  std::inner_product(v.begin(), v.end(), v.begin(), 0.0) / v.size() );
+    //ROS_INFO( "Mean : %2.4f :::: Median : %2.4f :::: RMS : %2.4f", mean, median, rms );
+
+    float perSec = (float)v.size() / 30.0f;
+    ROS_INFO( "Mean : %2.4f :::: Median : %2.4f :::: RMS : %2.4f", mean/perSec, median/perSec, rms/perSec );
 }
 
 
@@ -1645,7 +1441,7 @@ void SolveDVO::computeDistTransfrmOfRef()
         cv::Canny( refCvMat, refEdge, 150, 100, 3, true );
         refEdge = 255 - refEdge;
 
-        cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L1, 5 );
+        cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L2, 5 );
         cv::normalize(refDistTransCvMat, refDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
 
 //        double min, max;
@@ -1730,20 +1526,19 @@ void SolveDVO::computeDistTransfrmOfNow()
     isNowDistTransfrmAvailable = true;
 }
 
-/// @brief The event loop. Basically an ever running while with ros::spinOnce()
-/// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
-void SolveDVO::loop()
-{
 
-/*
+/// @brief Only loop through the images received (now frame) and optionally GT. No DVO estimation.
+void SolveDVO::loopDry()
+{
 #ifdef __TF_GT__
     ROS_INFO( "Will Also publish GT pose (wrt 1st frame) from tf-data");
     tf::TransformListener tflis;
     Eigen::Matrix3f _tf_Rf, _tf_Rc, _tf_Rc_f;
     Eigen::Vector3f _tf_Tf, _tf_Tc, _tf_Tc_f;
+    bool _tf_1st_frame = false;
 #endif //__TF_GT__
 
-      // Dry Loop
+    // Dry Loop
     long nFrame = 0;
     ros::Rate rate(30);
     while( ros::ok() )
@@ -1761,22 +1556,26 @@ void SolveDVO::loop()
         tf::StampedTransform transform;
         try{
             tflis.lookupTransform("/world", "/openni_rgb_optical_frame", ros::Time(0), transform );
+
+            if( _tf_1st_frame == false )
+            {
+                tfTransform2EigenMat(transform, _tf_Rf, _tf_Tf);
+                _tf_1st_frame = true;
+            }
+
+            if( _tf_1st_frame == true )
+            {
+                tfTransform2EigenMat(transform, _tf_Rc, _tf_Tc);
+                _tf_Tc_f = _tf_Rf.transpose() * ( _tf_Tc - _tf_Tf );
+                _tf_Rc_f = _tf_Rf.transpose() * _tf_Rc;
+
+                geometry_msgs::Pose __currentGTPose;
+                mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f, __currentGTPose);
+            }
         }
         catch(tf::TransformException &ex) {
             ROS_ERROR("NO TF Message");
         }
-
-
-        if( nFrame == 0 )
-        {
-            tfTransform2EigenMat(transform, _tf_Rf, _tf_Tf);
-        }
-
-        tfTransform2EigenMat(transform, _tf_Rc, _tf_Tc);
-        _tf_Tc_f = _tf_Rf.transpose() * ( _tf_Tc - _tf_Tf );
-        _tf_Rc_f = _tf_Rf.transpose() * _tf_Rc;
-        mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f);
-
 
 #endif
 
@@ -1794,16 +1593,34 @@ void SolveDVO::loop()
 
     }
 
-*/
+}
+
+
+/// @brief The event loop. Basically an ever running while with ros::spinOnce()
+/// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
+void SolveDVO::loop()
+{
+
+
 
 #ifdef __TF_GT__
-    ROS_INFO( "Will Also publish GT pose (wrt 1st frame) from tf-data");
+    ROS_INFO( "Will also publish GT pose (wrt 1st frame) from tf-data");
+    // "*c" --> absolute pose of current frame (wrt to MOCAP)
+    // "*f" --> pose of 1st frame (wrt to MOCAP)
+    // "*c_f" --> pose of current frame wrt to 1st frame
     tf::TransformListener tflis;
-    Eigen::Matrix3f _tf_Rf, _tf_Rc, _tf_Rc_f;
-    Eigen::Vector3f _tf_Tf, _tf_Tc, _tf_Tc_f;
+    Eigen::Matrix3f _tf_Rf = Eigen::Matrix3f::Identity();
+    Eigen::Matrix3f _tf_Rc = Eigen::Matrix3f::Identity();
+    Eigen::Matrix3f _tf_Rc_f = Eigen::Matrix3f::Identity();
+    Eigen::Vector3f _tf_Tf = Eigen::Vector3f::Zero();
+    Eigen::Vector3f _tf_Tc = Eigen::Vector3f::Zero();
+    Eigen::Vector3f _tf_Tc_f = Eigen::Vector3f::Zero();
+    bool _tf_GT_1_frame_available = false;
+
+    std::vector<float>drifts;
+    drifts.reserve(10000);
 #endif //__TF_GT__
 
-    cv::Mat debugScratchBoard = cv::Mat::ones(400, 400, CV_8UC1 ) * 255;
     double iterationsComputeTime=0.0;
     double avgIterationsTime=0.0;
 
@@ -1840,28 +1657,44 @@ void SolveDVO::loop()
             lastRefFrame = 0;
 
 
-            // setting 1st frame as key-frame with itself as origin.
-            gop.pushAsKeyFrame(nFrame, 1, cR, cT );
+
 
 
 #ifdef __TF_GT__
             //note down the pose of 1st frame of GT
         tf::StampedTransform transform;
         try{
+             //block until it is available. maximum wait for 1 sec for tf to be active
+            tflis.waitForTransform("/world", "/openni_rgb_optical_frame", ros::Time(0), ros::Duration(1.0) );
+
             tflis.lookupTransform("/world", "/openni_rgb_optical_frame", ros::Time(0), transform );
+
+            tfTransform2EigenMat(transform, _tf_Rf, _tf_Tf);
+
+            tfTransform2EigenMat(transform, _tf_Rc, _tf_Tc);
+            _tf_Tc_f = _tf_Rf.transpose() * ( _tf_Tc - _tf_Tf );
+            _tf_Rc_f = _tf_Rf.transpose() * _tf_Rc;
+
+            ROS_INFO( "Registered 1st GT frame transform" );
+            _tf_GT_1_frame_available = true;
+
+
+            geometry_msgs::Pose __currentGTPose;
+            mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f, __currentGTPose);
         }
         catch(tf::TransformException &ex) {
-            ROS_ERROR("NO TF Message");
+            ROS_ERROR("NO TF Message. Will set one of the subsequent frame as the 1st frame. Everything might be slightly off");
+            ROS_ERROR("%s",ex.what());
         }
 
-        tfTransform2EigenMat(transform, _tf_Rf, _tf_Tf);
 
-        tfTransform2EigenMat(transform, _tf_Rc, _tf_Tc);
-        _tf_Tc_f = _tf_Rf.transpose() * ( _tf_Tc - _tf_Tf );
-        _tf_Rc_f = _tf_Rf.transpose() * _tf_Rc;
-        mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f);
+        if( _tf_GT_1_frame_available==false ) //make a blue sphere in case of slight delay in tf
+            gop.pushAsKeyFrame(nFrame, 10, cR, cT );
+        else
 #endif //__TF_GT__
 
+        // setting 1st frame as key-frame with itself as origin.
+        gop.pushAsKeyFrame(nFrame, 1, cR, cT );
 
             this->isFrameAvailable = false;
             nFrame++;
@@ -1894,16 +1727,31 @@ void SolveDVO::loop()
         tf::StampedTransform transform;
         try{
             tflis.lookupTransform("/world", "/openni_rgb_optical_frame", ros::Time(0), transform );
+
+            if( _tf_GT_1_frame_available == false )
+            {
+                tfTransform2EigenMat(transform, _tf_Rf, _tf_Tf);
+                _tf_GT_1_frame_available = true;
+            }
+
+
+            if( _tf_GT_1_frame_available ) {
+            tfTransform2EigenMat(transform, _tf_Rc, _tf_Tc);
+            _tf_Tc_f = _tf_Rf.transpose() * ( _tf_Tc - _tf_Tf );
+            _tf_Rc_f = _tf_Rf.transpose() * _tf_Rc;
+            }
         }
         catch(tf::TransformException &ex) {
             ROS_ERROR("NO TF Message");
+            ROS_ERROR("%s",ex.what());
+
         }
 #endif //__TF_GT__
 
 
         ros::Time jstart = ros::Time::now();
         //runIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-        runIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        //runIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
         runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 
         ros::Duration jdur = ros::Time::now() - jstart;
@@ -1925,6 +1773,7 @@ void SolveDVO::loop()
         int reasonForChange=0;
 
 
+        /*
         // These 3 following IFs will check if it is time to change the reference frame
         if( b_cap > laplacianThreshExitCond ) {
             ROS_ERROR( "Fitted laplacian b: %.2f. Laplacian b_thresh : %.2f. Signal change of reference frame", b_cap, laplacianThreshExitCond );
@@ -1947,7 +1796,15 @@ void SolveDVO::loop()
             signalGetNewRefImage = true;
             reasonForChange=4;
         }
+*/
 
+
+        signalGetNewRefImage = false;
+        if( (nFrame - lastRefFrame) == 5 )
+        {
+            signalGetNewRefImage = true;
+            reasonForChange=5;
+        }
 
 
 
@@ -2093,23 +1950,31 @@ void SolveDVO::loop()
     }
 
 
-        // Publishing
+        //
+        // ============== PUBLISHING ==============
+        //
 
         ros::Time pubstart = ros::Time::now();
-        mviz.publishGOP();
+        geometry_msgs::Pose __currentEstimatedPose;
+        mviz.publishGOP(__currentEstimatedPose);
+        printPose(__currentEstimatedPose, "main/__currentEstimatedPose ");
+
         //mviz.publishFullPointCloud();
         ros::Duration pubdur = ros::Time::now() - pubstart;
         double displayTime = pubdur.toSec();
-        ROS_INFO( "Display done in %lf ms", displayTime*1000 );
+        //ROS_INFO( "Display done in %lf ms", displayTime*1000 );
 
 
 
 
 #ifdef __TF_GT__
-        tfTransform2EigenMat(transform, _tf_Rc, _tf_Tc);
-        _tf_Tc_f = _tf_Rf.transpose() * ( _tf_Tc - _tf_Tf );
-        _tf_Rc_f = _tf_Rf.transpose() * _tf_Rc;
-        mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f);
+        geometry_msgs::Pose __currentGTPose;
+        mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f, __currentGTPose);
+        printPose(__currentGTPose, "main/__currentGTPose ");
+
+        float drift = getDriftFromPose( __currentGTPose, __currentEstimatedPose );
+        drifts.push_back(drift);
+        analyzeDriftVector( drifts );
 #endif //__TF_GT__
 
 

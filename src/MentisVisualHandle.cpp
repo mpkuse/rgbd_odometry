@@ -279,7 +279,8 @@ void MentisVisualHandle::debug(Eigen::Matrix3f cR, Eigen::Vector3f cT)
 
 /// Publish data to RViz using only the GOP object
 /// Uses only dvoHandle->gop. This function renders the other visualization function of estimated pose as deprecated.
-void MentisVisualHandle::publishGOP()
+/// @param [out] returnLatestPose : The pose that is published. Returned by ref
+void MentisVisualHandle::publishGOP(geometry_msgs::Pose& returnLatestPose )
 {
     nav_msgs::Path pathMsg;
     pathMsg.header.frame_id = rviz_frame_id;
@@ -294,8 +295,9 @@ void MentisVisualHandle::publishGOP()
     }
 
 
-    ROS_INFO( "Publishing Pose (gDVO) : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f", st.pose.orientation.x, st.pose.orientation.y, st.pose.orientation.z, st.pose.orientation.w,
-                     st.pose.position.x, st.pose.position.y, st.pose.position.z );
+    //ROS_INFO( "Publishing Pose (gDVO) : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f", st.pose.orientation.x, st.pose.orientation.y, st.pose.orientation.z, st.pose.orientation.w,
+    //                 st.pose.position.x, st.pose.position.y, st.pose.position.z );
+    returnLatestPose = st.pose;
 
 
 #ifdef __DEBUG_FRAME_MARKER__
@@ -348,9 +350,15 @@ void MentisVisualHandle::publishGOP()
                 marker.color.b = 1.0f;
                 marker.color.a = 1.0f;
                 break;
-            default:
+            case 5: //# forceful change of ref frame. for example every 5 frame
                 marker.color.r = 0.0f;
                 marker.color.g = 0.0f;
+                marker.color.b = 1.0f;
+                marker.color.a = 1.0f;
+                break;
+            default:
+                marker.color.r = 1.0f;
+                marker.color.g = 1.0f;
                 marker.color.b = 1.0f;
                 marker.color.a = 1.0f;
 
@@ -467,7 +475,11 @@ void MentisVisualHandle::publishFullPointCloud()
 
 }
 
-void MentisVisualHandle::publishFromTF(Eigen::Matrix3f &rot, Eigen::Vector3f &tran)
+/// Publishes the given R,T. These R,T comes from TF data
+/// @param [in] rot : Rotation matrix retrived from TF
+/// @param [in] tran : Translation matrix retrived from TF
+/// @param [out] returnLatestPose : The pose that is published. Returned by ref
+void MentisVisualHandle::publishFromTF(Eigen::Matrix3f &rot, Eigen::Vector3f &tran,  geometry_msgs::Pose& returnLatestPose)
 {
     geometry_msgs::Pose rospose;
     matrixToPose(rot, tran, rospose);
@@ -479,9 +491,10 @@ void MentisVisualHandle::publishFromTF(Eigen::Matrix3f &rot, Eigen::Vector3f &tr
     roll = euler(2,0);
 
 
-    ROS_INFO( "Publishing Pose (GT) : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f", rospose.orientation.x, rospose.orientation.y, rospose.orientation.z, rospose.orientation.w,
-                     rospose.position.x, rospose.position.y, rospose.position.z );
+//    ROS_INFO( "Publishing Pose   (GT) : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f ]", rospose.orientation.x, rospose.orientation.y, rospose.orientation.z, rospose.orientation.w,
+//                     rospose.position.x, rospose.position.y, rospose.position.z );
 //    ROS_INFO( "Roll-Pitch-Yaw :  [ %f %f %f ] (camera POV)", roll, pitch, yaw );
+    returnLatestPose = rospose;
 
 
     geometry_msgs::PoseStamped poseS;

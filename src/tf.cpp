@@ -16,6 +16,7 @@
 #include <nav_msgs/Path.h>
 
 #include <Eigen/Dense>
+#include <Eigen/SVD>
 
 
 
@@ -63,12 +64,40 @@ void matrixToPose(Eigen::Matrix3f& rot, Eigen::Vector3f& tran, geometry_msgs::Po
     rospose.orientation.w = quat.w();
 }
 
-
+using namespace std;
 int main( int argc, char ** argv )
 {
+
+    // testing svd with eigen
+    Eigen::MatrixXd m = Eigen::MatrixXd::Random(3,3);
+    std::cout << "Here is the matrix m:" << endl << m << endl;
+    Eigen::JacobiSVD<Eigen::MatrixXd, Eigen::NoQRPreconditioner> svd(m, Eigen::ComputeFullU | Eigen:: ComputeFullV);
+
+    cout << "Its singular values are:" << endl << svd.singularValues() << endl;
+    Eigen::VectorXd SVec = svd.singularValues();
+    Eigen::MatrixXd S = Eigen::MatrixXd::Identity(3,3);
+    S(0,0) = SVec(0);//(SVec(0)>0)?1.0f:-1.0f;
+    S(1,1) = SVec(1);//(SVec(1)>0)?1.0f:-1.0f;
+    S(2,2) = SVec(2);//(SVec(2)>0)?1.0f:-1.0f;
+
+
+
+    cout << "Its left singular vectors are the columns of the thin U matrix:" << endl << svd.matrixU() << endl;
+    cout << "Its right singular vectors are the columns of the thin V matrix:" << endl << svd.matrixV() << endl;
+
+
+    std::cout << "Here is the matrix m:" << endl << m << endl;
+
+    Eigen::MatrixXd recon = svd.matrixU() * S * svd.matrixV().transpose();
+    cout << "Reconstructed : \n["<< recon << "]"<< endl;
+
+    cout << "R'*R : \n"<< recon.transpose() * recon << endl;
+
+    cout<< "diff : \n"<< m - recon << endl;
+
+    /*
     ros::init(argc, argv, "tf_play");
     ros::NodeHandle nh;
-
 
     tf::TransformListener listener;
     ros::Publisher pub_gt_pose = nh.advertise<geometry_msgs::PoseStamped>( "/dvo/GTpose", 10 );
@@ -134,4 +163,5 @@ int main( int argc, char ** argv )
         loopCount++;
     }
     ros::spin();
+    */
 }

@@ -39,6 +39,37 @@ SolveDVO::SolveDVO()
     mviz.setNodeHandle(this); //this call also setups the publisher
     mviz.setRVizFrameID("denseVO");
 
+
+    //
+    // Open files for writing final poses (wrt to 1st frame)
+#ifdef __WRITE_EST_POSE_TO_FILE
+    estPoseFile.open(__WRITE_EST_POSE_TO_FILE, std::ios_base::trunc );
+    if( estPoseFile.is_open() )
+        ROS_INFO( "File opening success : %s", __WRITE_EST_POSE_TO_FILE);
+    else
+        ROS_ERROR( "File opening fail : %s", __WRITE_EST_POSE_TO_FILE );
+#endif
+
+
+#ifdef __WRITE_GT__POSE_TO_FILE
+    gtPoseFile.open(__WRITE_GT__POSE_TO_FILE, std::ios_base::trunc );
+    if( gtPoseFile.is_open() )
+        ROS_INFO( "File opening success : %s", __WRITE_GT__POSE_TO_FILE);
+    else
+        ROS_ERROR( "File opening fail : %s", __WRITE_GT__POSE_TO_FILE );
+#endif
+
+}
+
+SolveDVO::~SolveDVO()
+{
+#ifdef __WRITE_EST_POSE_TO_FILE
+    estPoseFile.close();
+#endif
+
+#ifdef __WRITE_GT__POSE_TO_FILE
+    gtPoseFile.close();
+#endif
 }
 
 
@@ -376,7 +407,7 @@ void SolveDVO::computeJacobianOfNowFrame(int level, Eigen::Matrix3f &cR, Eigen::
 /// Reads the epsilon (error) values at the reprojected location (not computed here). Errors-vals here are the
 /// distance-transform values of the now frame at reprojected locations
 /// @param[in] level : Pyramidal level [0-4]
-/// @param[in] reprojections : 3xN matrix
+/// @param[in] reprojections : 3xN matrix. Although last row is not usable
 /// @param[out] epsilon : Error (not squared) at every reprojected pt.
 /// @param[out] weights : corresponding weights (for solving equation with Huber norm)
 /// @returns : Ratio of visible points to the total points tracked
@@ -399,7 +430,13 @@ float SolveDVO::getReprojectedEpsilons(int level, Eigen::MatrixXf& reprojections
             continue;
         }
 
+#ifdef __INTERPOLATE_DISTANCE_TRANSFORM
+        epsilon(i) = interpolate(_nowDist,reprojections(1,i), reprojections(0,i) );
+#else
         epsilon(i) = _nowDist( reprojections(1,i), reprojections(0,i) );
+#endif
+
+
         weights(i) = getWeightOf( epsilon(i) );
     }
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -1095,6 +1132,40 @@ int SolveDVO::selectedPts(int level, Eigen::MatrixXi& roi)
     return roiSum;
 }
 
+/// @brief Projects a 3x3 matrix into the orthogonal group.
+/// The solution is to enforce singular values to be either +-1 in place og 0.999999.
+/// @param [in,out] R : The matrix which will be converted to orthogonal matrix
+void SolveDVO::rotationize(Eigen::Matrix3f &R)
+{
+
+}
+
+/// @brief Gives the value of the matrix F at position (y,x). y:rowIndx. x:colIndx. Uses Bilinear interpolation
+float SolveDVO::interpolate(Eigen::MatrixXf& F, float ry, float rx)
+{
+    //
+    // Bilinear interpolation
+//    ROS_INFO( "reprojected : %f, %f", ry, rx );
+    int ry_d = (int)floor(ry);
+    int rx_d = (int)floor(rx);
+    int ry_u = (int)ceil(ry);
+    int rx_u = (int)ceil(rx);
+    float inc_x = rx - rx_d; //floating part in x
+    float inc_y = ry - ry_d; //floating part in y
+
+    // In the following d_xdyd_xuyd means it is a linear combination of 2 terms viz.
+    // 1. first term from down of x (xd), down of y (yd)
+    // 2. 2nd term from up of x (xu), down of y (yd)
+    float f_xdyd_xuyd =  (1.0f - inc_x) * F(ry_d,rx_d) + (inc_x) * F(ry_d,rx_u);
+    float f_xdyu_xuyu =  (1.0f - inc_x) * F(ry_u,rx_d) + (inc_x) * F(ry_u,rx_u);
+
+    // Interpolate the above obtained intermediate terms
+    float f_xy = (1.0f - inc_y) * f_xdyd_xuyd + inc_y * f_xdyu_xuyu;
+
+    return f_xy;
+
+}
+
 void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * msg )
 {
 //#ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -1107,10 +1178,19 @@ void SolveDVO::printRT(Eigen::Matrix3f& fR, Eigen::Vector3f& fT, const char * ms
     //#endif
 }
 
-void SolveDVO::printPose(geometry_msgs::Pose &rospose, const char *msg)
+void SolveDVO::printPose(geometry_msgs::Pose &rospose, const char *msg, std::ostream& stream )
 {
     ROS_INFO( "%s : [ %.4f %.4f %.4f %.4f :: %.4f %.4f %.4f ]", msg, rospose.orientation.x, rospose.orientation.y, rospose.orientation.z, rospose.orientation.w,
               rospose.position.x, rospose.position.y, rospose.position.z );
+
+    if( stream != std::cout )
+    {
+        //        ROS_ERROR( "PRINTING TO FILE" );
+        stream<< rospose.orientation.x<< " "<< rospose.orientation.y<< " "<< rospose.orientation.z<< " "<< rospose.orientation.w<< " "<<
+                 rospose.position.x<< " "<< rospose.position.y<< " "<< rospose.position.z<< "\n";
+        stream.flush();
+    }
+
 }
 
 float SolveDVO::getDriftFromPose(geometry_msgs::Pose &p1, geometry_msgs::Pose &p2)
@@ -1750,9 +1830,9 @@ void SolveDVO::loop()
 
 
         ros::Time jstart = ros::Time::now();
-        //runIterations(2, 7, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-        //runIterations(1, 25, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-        runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        runIterations(2, 10, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+        runIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+        runIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 
         ros::Duration jdur = ros::Time::now() - jstart;
         iterationsComputeTime = jdur.toSec();
@@ -1860,7 +1940,9 @@ void SolveDVO::loop()
             sprintf( signalGetNewRefImageMsg, "" );
 
             //rerun iterations
-            runIterations(0, 500, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            runIterations(2, 10, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+            runIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            runIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 
             // push GOP for now frame as ordinary frame
             gop.pushAsOrdinaryFrame(nFrame, cR, cT);
@@ -1957,7 +2039,7 @@ void SolveDVO::loop()
         ros::Time pubstart = ros::Time::now();
         geometry_msgs::Pose __currentEstimatedPose;
         mviz.publishGOP(__currentEstimatedPose);
-        printPose(__currentEstimatedPose, "main/__currentEstimatedPose ");
+        printPose(__currentEstimatedPose, "main/__currentEstimatedPose ", estPoseFile );
 
         //mviz.publishFullPointCloud();
         ros::Duration pubdur = ros::Time::now() - pubstart;
@@ -1969,8 +2051,8 @@ void SolveDVO::loop()
 
 #ifdef __TF_GT__
         geometry_msgs::Pose __currentGTPose;
-        mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f, __currentGTPose);
-        printPose(__currentGTPose, "main/__currentGTPose ");
+        mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f, __currentGTPose );
+        printPose(__currentGTPose, "main/__currentGTPose ", gtPoseFile );
 
         float drift = getDriftFromPose( __currentGTPose, __currentEstimatedPose );
         drifts.push_back(drift);

@@ -61,6 +61,8 @@
 #define GRAD_NORM( A, B ) (fabs(A) + fabs(B))
 //#define GRAD_NORM( A, B ) fabs(A)
 
+//
+// Display Plugs
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__DISPLAY_ONLY
 
@@ -71,13 +73,22 @@
 #define __REPROJECTION_LEVEL 0
 
 
+//
+// Ground truth Plugs
 #define __TF_GT__ //Enable GT DISPLAY
+#define __WRITE_EST_POSE_TO_FILE "poses/estPoses.txt"
+#define __WRITE_GT__POSE_TO_FILE "poses/gtPoses.txt"
 
 
-// Updating the reference frame
+//
+// Updating the reference frame logic plugs
 #define __NEW__REF_UPDATE //throwing away wrong estimate
 //#define __OLD__REF_UPDATE //old naive logic
 
+
+//
+// Interpolate distance transform plug
+#define __INTERPOLATE_DISTANCE_TRANSFORM
 
 #undef NDEBUG
 #include <assert.h>
@@ -104,6 +115,7 @@ class SolveDVO
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     SolveDVO();
+    ~SolveDVO();
 
     void loopDry();
     void loop();
@@ -176,6 +188,9 @@ private:
 
     float getWeightOf( float r );
     int selectedPts(int level, Eigen::MatrixXi &roi);
+    void rotationize( Eigen::Matrix3f& R);
+    float interpolate( Eigen::MatrixXf &F, float ry, float rx );
+
 
     bool signalGetNewRefImage;
     char signalGetNewRefImageMsg[500];
@@ -188,7 +203,7 @@ private:
     void exponentialMap(Eigen::VectorXf &psi, Eigen::Matrix3f &outR, Eigen::Vector3f &outT); //this is not in use. It is done with Sophus
     void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3b color);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
-    void printPose( geometry_msgs::Pose& rospose, const char * msg );
+    void printPose( geometry_msgs::Pose& rospose, const char * msg, std::ostream &stream );
     float getDriftFromPose( geometry_msgs::Pose& p1, geometry_msgs::Pose& p2 );
     void  analyzeDriftVector( std::vector<float>& v );
     float processResidueHistogram( Eigen::VectorXf &residi, bool quite );
@@ -258,12 +273,26 @@ private:
     ros::NodeHandle nh;
     ros::Subscriber sub;
 
+    //
+    // Visualization Class
     MentisVisualHandle mviz;
 
 
 
     //helpers for publishing
     void tfTransform2EigenMat( tf::StampedTransform& tr, Eigen::Matrix3f& R, Eigen::Vector3f& T );
+
+
+    // Poses to File
+#ifdef __WRITE_EST_POSE_TO_FILE
+    std::ofstream estPoseFile;
+#endif
+
+
+
+#ifdef __WRITE_GT__POSE_TO_FILE
+    std::ofstream gtPoseFile;
+#endif
 
 
 

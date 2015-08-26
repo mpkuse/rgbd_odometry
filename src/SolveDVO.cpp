@@ -870,6 +870,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
 
     // Set : f^* = min{ f_best^(k-1), f^k }
     cR = bestcR;
+//    rotationize(cR);
     cT = bestcT;
     finalEpsilons = bestEpsilon;
     finalReprojections = bestReprojections;
@@ -1137,6 +1138,16 @@ int SolveDVO::selectedPts(int level, Eigen::MatrixXi& roi)
 /// @param [in,out] R : The matrix which will be converted to orthogonal matrix
 void SolveDVO::rotationize(Eigen::Matrix3f &R)
 {
+    Eigen::JacobiSVD<Eigen::Matrix3f, Eigen::NoQRPreconditioner> svd(R, Eigen::ComputeFullU | Eigen:: ComputeFullV);
+
+    Eigen::Vector3f SVec = svd.singularValues();
+    Eigen::MatrixXf S = Eigen::MatrixXf::Identity(3,3);
+    S(0,0) = (SVec(0)>0)?1.0f:-1.0f;
+    S(1,1) = (SVec(1)>0)?1.0f:-1.0f;
+    S(2,2) = (SVec(2)>0)?1.0f:-1.0f;
+
+
+    R = svd.matrixU() * S * svd.matrixV().transpose();
 
 }
 
@@ -1830,7 +1841,7 @@ void SolveDVO::loop()
 
 
         ros::Time jstart = ros::Time::now();
-        runIterations(2, 10, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+        runIterations(2, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
         runIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
         runIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 
@@ -1940,7 +1951,7 @@ void SolveDVO::loop()
             sprintf( signalGetNewRefImageMsg, "" );
 
             //rerun iterations
-            runIterations(2, 10, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+            runIterations(2, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
             runIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
             runIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
 
@@ -2039,7 +2050,11 @@ void SolveDVO::loop()
         ros::Time pubstart = ros::Time::now();
         geometry_msgs::Pose __currentEstimatedPose;
         mviz.publishGOP(__currentEstimatedPose);
+#ifdef __WRITE_EST_POSE_TO_FILE
         printPose(__currentEstimatedPose, "main/__currentEstimatedPose ", estPoseFile );
+#else
+        printPose(__currentEstimatedPose, "main/__currentEstimatedPose ", std::cout );
+#endif
 
         //mviz.publishFullPointCloud();
         ros::Duration pubdur = ros::Time::now() - pubstart;
@@ -2052,7 +2067,11 @@ void SolveDVO::loop()
 #ifdef __TF_GT__
         geometry_msgs::Pose __currentGTPose;
         mviz.publishFromTF(_tf_Rc_f, _tf_Tc_f, __currentGTPose );
+#ifdef __WRITE_GT__POSE_TO_FILE
         printPose(__currentGTPose, "main/__currentGTPose ", gtPoseFile );
+#else
+        printPose(__currentGTPose, "main/__currentGTPose ", std::cout );
+#endif
 
         float drift = getDriftFromPose( __currentGTPose, __currentEstimatedPose );
         drifts.push_back(drift);

@@ -11,6 +11,8 @@
 //                  As of 6th Aug (morning) there is a bug in the        //
 //                    estimates I suspect it to be a crazy memory related//
 //                    (lazy evaluation related bug)                      //
+//  Updates : Templating the entire GOP/GOPElement class on              //
+//                  26th Aug, 2015                                       //
 ///////////////////////////////////////////////////////////////////////////
 
 #include <ros/ros.h>
@@ -21,18 +23,23 @@
 #include <geometry_msgs/Pose.h>
 
 
+
+
+
+
 /// Stores the poses of each frame processed and provides an interface for GOP structure
+template <typename T>
 class GOPElement
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     GOPElement();
 
-    void setAsOrdinaryFrame(int frameNum, Eigen::Matrix3f wR, Eigen::Vector3f wT );
-    void setAsKeyFrame(int frameNum, int reason, Eigen::Matrix3f wR, Eigen::Vector3f wT );
+    void setAsOrdinaryFrame(int frameNum, Eigen::Matrix<T,3,3> wR, Eigen::Matrix<T,3,1> wT );
+    void setAsKeyFrame(int frameNum, int reason, Eigen::Matrix<T,3,3> wR, Eigen::Matrix<T,3,1> wT );
 
-    const Eigen::Matrix3f& getR();
-    const Eigen::Vector3f& getT();
+    const Eigen::Matrix<T,3,3>& getR();
+    const Eigen::Matrix<T,3,1>& getT();
     const geometry_msgs::Pose& getPose();
 
     bool isKeyFrame();
@@ -44,11 +51,11 @@ private:
     int frameId;
     int reason_of_change; //this is valid only if isKeyFrame true
 
-    Eigen::Matrix3f world_R; //in world-ordinate system (ie. co-ordinate system of 1st frame
-    Eigen::Vector3f world_T;
+    Eigen::Matrix<T,3,3> world_R; //in world-ordinate system (ie. co-ordinate system of 1st frame
+    Eigen::Matrix<T,3,1> world_T;
 
     geometry_msgs::Pose world_pose;
-    void matrixToPose(Eigen::Matrix3f rot, Eigen::Vector3f tran, geometry_msgs::Pose& rospose);
+    void matrixToPose(Eigen::Matrix<T,3,3> rot, Eigen::Matrix<T,3,1> tran, geometry_msgs::Pose& rospose);
 
 
 };
@@ -57,14 +64,15 @@ private:
 
 /// Basically contains a vector of `GOPElement`. Need to provide the incremental poses at each frames and
 /// denote if it is a keyframe. This class converts all relative poses to global poses
+template <typename T>
 class GOP
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     GOP();
 
-    void pushAsOrdinaryFrame(int frameNum, Eigen::Matrix3f cR, Eigen::Vector3f cT );
-    void pushAsKeyFrame(int frameNum, int reason, Eigen::Matrix3f cR, Eigen::Vector3f cT );
+    void pushAsOrdinaryFrame(int frameNum, Eigen::Matrix<T,3,3> cR, Eigen::Matrix<T,3,1> cT );
+    void pushAsKeyFrame(int frameNum, int reason, Eigen::Matrix<T,3,3> cR, Eigen::Matrix<T,3,1> cT );
 
     void updateMostRecentToKeyFrame(int reason);
 
@@ -73,17 +81,17 @@ public:
 
     // Getters
     const geometry_msgs::Pose &getGlobalPoseAt(int i );
-    const Eigen::Matrix3f &getGlobalRAt(int i );
-    const Eigen::Vector3f &getGlobalTAt(int i );
+    const Eigen::Matrix<T,3,3> &getGlobalRAt(int i );
+    const Eigen::Matrix<T,3,1> &getGlobalTAt(int i );
 
     bool isKeyFrameAt( int i);
     int getReasonAt( int i);
 
 private:
-    std::vector<GOPElement> gopVector;
+    std::vector< GOPElement<T> > gopVector;
 
-    Eigen::Matrix3f lastKeyFr_R;
-    Eigen::Vector3f lastKeyFr_T;
+    Eigen::Matrix<T,3,3> lastKeyFr_R;
+    Eigen::Matrix<T,3,1> lastKeyFr_T;
 };
 
 

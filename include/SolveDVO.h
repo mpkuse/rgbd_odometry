@@ -65,12 +65,13 @@
 // Display Plugs
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__DISPLAY_ONLY
-
-#define __ENABLE_DISPLAY__  1 //display in loop()
-//#define __MINIMAL_DISPLAY 1
+#define __REPROJECTION_LEVEL 0 //only useful with above defines
 
 
-#define __REPROJECTION_LEVEL 0
+//#define __ENABLE_DISPLAY__  1 //display in loop()
+#define __MINIMAL_DISPLAY 1
+
+
 
 
 //
@@ -167,7 +168,7 @@ private:
 
     //
     // Frame pose handling class
-    GOP gop;
+    GOP<float> gop;
 
 
 

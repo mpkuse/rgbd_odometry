@@ -26,6 +26,14 @@ SolveDVO::SolveDVO()
 
 
 
+    // Iterations Config
+    iterationsConfig.push_back(300); //level 0
+    iterationsConfig.push_back(100); //level 1
+    iterationsConfig.push_back(50); //level 2
+//    iterationsConfig.push_back(100); //level 3
+
+
+
     //
     // Setting up Publishers & Subscribers
 
@@ -640,6 +648,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
     float stepLength=3E-8;
     float BETA = 0.5;
     Eigen::VectorXf descentDirection = Eigen::VectorXf::Zero(6);
+    Eigen::VectorXf g_prev = Eigen::VectorXf::Zero(6);
     for( int itr=0 ; itr< maxIterations ; itr++ )
     {
 
@@ -725,11 +734,17 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
         }*/
 
         // Square summable but not summable seq of step-length (as recommended in Boyd's documents)
-        stepLength = 1.0E-6 / (itr+1);
+        stepLength = 1.0E-2 / (itr+1);
 
 
         Eigen::VectorXf g = JTW * epsilon; // subgradient of \Sum{ V^2(.) }
-        descentDirection = (1.0f-BETA)*g + BETA*descentDirection;
+        //g = g/g.norm();
+//        descentDirection = (1.0f-BETA)*g + BETA*descentDirection;
+//        descentDirection = (1.0f-BETA)*g + BETA*g_prev;
+        descentDirection = g;
+        descentDirection = descentDirection / descentDirection.norm();
+        g_prev = g;
+
 
         Eigen::VectorXf psi = - stepLength* descentDirection;
 
@@ -818,6 +833,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
 //        cR = cR * xRot;
         cT += cR*xTrans;
         cR *= xRot;
+//        rotationize(cR);
 
 
 
@@ -888,6 +904,8 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3f& cR, 
 
 
 }
+
+
 
 
 /// @brief Updates the current estimates of R_{t}, T_{t} using R_h, T_h ie. the best deltas from previous iteration
@@ -1532,7 +1550,8 @@ void SolveDVO::computeDistTransfrmOfRef()
         cv::Canny( refCvMat, refEdge, 150, 100, 3, true );
         refEdge = 255 - refEdge;
 
-        cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L2, 5 );
+//        cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L2, 5 );
+        cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L2, CV_DIST_MASK_PRECISE );
         cv::normalize(refDistTransCvMat, refDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
 
 //        double min, max;
@@ -1590,7 +1609,8 @@ void SolveDVO::computeDistTransfrmOfNow()
         cv::Canny( nowCvMat, nowEdge, 150, 100, 3, true );
         nowEdge = 255 - nowEdge;
 
-        cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L1, 5 );
+//        cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L2, 5 );
+        cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L2, CV_DIST_MASK_PRECISE );
         cv::normalize(nowDistTransCvMat, nowDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
 
 //        double min, max;
@@ -1629,12 +1649,36 @@ void SolveDVO::loopDry()
     bool _tf_1st_frame = false;
 #endif //__TF_GT__
 
+#ifdef __DATA_FROM_XML_FILES__
+    char frameFileName[1000];
+#endif //__DATA_FROM_XML_FILES__
+
+
     // Dry Loop
     long nFrame = 0;
     ros::Rate rate(30);
     while( ros::ok() )
     {
         ros::spinOnce();
+
+#ifdef __DATA_FROM_XML_FILES__
+        int iDataFrameNum = __DATA_FROM_XML_FILES__START + nFrame;
+        if( iDataFrameNum > __DATA_FROM_XML_FILES__END )
+        {
+            ROS_ERROR( "Done with all files...Quitting..." );
+            break;
+        }
+        sprintf( frameFileName, "%s/framemono_%04d.xml", __DATA_FROM_XML_FILES__, iDataFrameNum );
+        bool flag = loadFromFile(frameFileName );
+        if( flag == false ) {
+            ROS_ERROR( "No More files, Quitting..");
+            break;
+        }
+        else
+            ROS_INFO( "=== Loaded file ``%s'' ===", frameFileName );
+
+#endif //__DATA_FROM_XML_FILES__
+
         if( !(this->isFrameAvailable) )
             continue;
 
@@ -1672,12 +1716,11 @@ void SolveDVO::loopDry()
 
 
         imshowEigenImage( "current Frame", im_n[0] );
-        cv::waitKey(1);
-        //        char ch = cv::waitKey(__ENABLE_DISPLAY__);
-        //        if( ch == 27 ){ // ESC
-        //            ROS_ERROR( "ESC pressed quitting...");
-        //            exit(1);
-        //        }
+        char ch = cv::waitKey(0);
+        if( ch == 27 ){ // ESC
+            ROS_ERROR( "ESC pressed quitting...");
+            exit(1);
+        }
         isFrameAvailable = false;
         rate.sleep();
         nFrame++;
@@ -1712,6 +1755,11 @@ void SolveDVO::loop()
     drifts.reserve(10000);
 #endif //__TF_GT__
 
+
+#ifdef __DATA_FROM_XML_FILES__
+    char frameFileName[1000];
+#endif //__DATA_FROM_XML_FILES__
+
     double iterationsComputeTime=0.0;
     double avgIterationsTime=0.0;
 
@@ -1719,6 +1767,8 @@ void SolveDVO::loop()
     // Pose of now frame wrt currently set reference frame
     Eigen::Matrix3f cR = Eigen::Matrix3f::Identity();
     Eigen::Vector3f cT = Eigen::Vector3f::Zero();
+    Eigen::Matrix3d cR_64 = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d cT_64 = Eigen::Vector3d::Zero();
 
 
     // Additional data returned by Gauss-Newton iterations
@@ -1735,10 +1785,28 @@ void SolveDVO::loop()
     long nFrame=0;
 
     //
-    // Capture the 1st frame (as ref-frame) unconditionally
+    // =================================  Capture the 1st frame (as ref-frame) unconditionally ==============================
     while( ros::ok() )
     {
         ros::spinOnce();
+#ifdef __DATA_FROM_XML_FILES__
+        int iDataFrameNum = __DATA_FROM_XML_FILES__START + nFrame;
+        if( iDataFrameNum > __DATA_FROM_XML_FILES__END )
+        {
+            ROS_ERROR( "Done with all files...Quitting..." );
+            break;
+        }
+        sprintf( frameFileName, "%s/framemono_%04d.xml", __DATA_FROM_XML_FILES__, iDataFrameNum );
+        bool flag = loadFromFile(frameFileName );
+        if( flag == false ) {
+            ROS_ERROR( "No More files, Quitting..");
+            break;
+        }
+        else
+            ROS_INFO( "=== Loaded file ``%s'' ===", frameFileName );
+
+#endif //__DATA_FROM_XML_FILES__
+
         ROS_INFO_ONCE( "Waiting for RGBDFramePyD messages..." );
         if( (this->isFrameAvailable) )
         {
@@ -1780,12 +1848,12 @@ void SolveDVO::loop()
 
 
         if( _tf_GT_1_frame_available==false ) //make a blue sphere in case of slight delay in tf
-            gop.pushAsKeyFrame(nFrame, 10, cR, cT );
+            gop.pushAsKeyFrame(nFrame, 10, cR_64, cT_64 );
         else
 #endif //__TF_GT__
 
         // setting 1st frame as key-frame with itself as origin.
-        gop.pushAsKeyFrame(nFrame, 1, cR, cT );
+        gop.pushAsKeyFrame(nFrame, 1, cR_64, cT_64 );
 
             this->isFrameAvailable = false;
             nFrame++;
@@ -1799,16 +1867,35 @@ void SolveDVO::loop()
 
 
     //
-    // Frames after 1st frame
+    // ========================= Process ALL OTHER Frames ===============================
     while( ros::ok() )
     {
         ros::spinOnce();
+#ifdef __DATA_FROM_XML_FILES__
+        int iDataFrameNum = __DATA_FROM_XML_FILES__START + nFrame;
+        if( iDataFrameNum > __DATA_FROM_XML_FILES__END )
+        {
+            ROS_ERROR( "Done with all files...Quitting..." );
+            break;
+        }
+        sprintf( frameFileName, "%s/framemono_%04d.xml", __DATA_FROM_XML_FILES__, iDataFrameNum );
+        bool flag = loadFromFile(frameFileName );
+        if( flag == false ) {
+            ROS_ERROR( "No More files, Quitting..");
+            break;
+        }
+        else
+            ROS_INFO( "=== Loaded file ``%s'' ===", frameFileName );
+
+#endif //__DATA_FROM_XML_FILES__
+
         if( !(this->isFrameAvailable) )
             continue;
 
         ROS_INFO( "=-=-=-=-=-=-== Frame # %ld ==-=-=-=-=-=-=", nFrame );
 
 
+        // =========== Set Now Frame ==============
 
         setRcvdFrameAsNowFrame();
 
@@ -1840,10 +1927,20 @@ void SolveDVO::loop()
 #endif //__TF_GT__
 
 
+        // ================== Run Iterations ==================
         ros::Time jstart = ros::Time::now();
-        runIterations(2, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-        runIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-        runIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+//        runIterations(2, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+//        runIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+//        runIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+
+        for( int f=(iterationsConfig.size()-1) ; f>=0 ; f-- )
+        {
+            if( iterationsConfig[f] > 0 )
+            {
+                ROS_INFO( "Run %d iterations @ level %d", iterationsConfig[f], f );
+                runIterations(f, iterationsConfig[f], cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+            }
+        }
 
         ros::Duration jdur = ros::Time::now() - jstart;
         iterationsComputeTime = jdur.toSec();
@@ -1862,6 +1959,10 @@ void SolveDVO::loop()
 #endif //__ENABLE_DISPLAY__
 
         int reasonForChange=0;
+
+
+        // ================== Change KeyFrame ? ====================
+        //   Check if the estimation was bad and if there is a need to change key-frame
 
 
         /*
@@ -1951,23 +2052,36 @@ void SolveDVO::loop()
             sprintf( signalGetNewRefImageMsg, "" );
 
             //rerun iterations
-            runIterations(2, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
-            runIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
-            runIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+//            runIterations(2, 50, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio  );
+//            runIterations(1, 100, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+//            runIterations(0, 300, cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+
+            for( int f=(iterationsConfig.size()-1) ; f>=0 ; f-- )
+            {
+                if( iterationsConfig[f] > 0 )
+                {
+                    ROS_INFO( "re-Run %d iterations @ level %d", iterationsConfig[f], f );
+                    runIterations(f, iterationsConfig[f], cR, cT, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+                }
+            }
 
             // push GOP for now frame as ordinary frame
-            gop.pushAsOrdinaryFrame(nFrame, cR, cT);
+            cR_64 = cR.cast<double>();
+            cT_64 = cT.cast<double>();
+            gop.pushAsOrdinaryFrame(nFrame, cR_64, cT_64);
         }
         else
         {
             //Currently estimated pose was acceptable wrt to lastRefFrame so push as ordinary
-            gop.pushAsOrdinaryFrame(nFrame, cR, cT);
+            cR_64 = cR.cast<double>();
+            cT_64 = cT.cast<double>();
+            gop.pushAsOrdinaryFrame(nFrame, cR_64, cT_64);
         }
 #endif
 
 
 
-        // ALL DISPLAY
+        // ================ ALL DISPLAY ==============
         {
 #ifdef __ENABLE_DISPLAY__
         //
@@ -2032,7 +2146,7 @@ void SolveDVO::loop()
         visualizeEnergyProgress( energyAtEachIteration, bestEnergyIndex, (energyAtEachIteration.rows() < 300)?4:1 );
 
 
-        char ch = cv::waitKey(1);
+        char ch = cv::waitKey(__MINIMAL_DISPLAY);
         if( ch == 27 ){ // ESC
             ROS_ERROR( "ESC pressed quitting...");
             ROS_ERROR( "Average iterations time per frame : %lf ms", avgIterationsTime*1000.0 );
@@ -2097,7 +2211,7 @@ void SolveDVO::loop()
 
 }
 
-
+/*
 
 /// @brief The event loop. Basically an ever running while with ros::spinOnce()
 /// This is a re-implementation taking into care the memory scopes and also processing only points with higher image gradients
@@ -2114,7 +2228,7 @@ void SolveDVO::loopFromFile()
     //const char * folder = "TUM_RGBD/fr1_xyz";
     const char * folder = "TUM_RGBD/fr2_desk";
 
-    const int START = 80;
+    const int START = 300;
     const int END = 3000;
 
 
@@ -2331,6 +2445,7 @@ void SolveDVO::loopFromFile()
 
     ROS_INFO( "Normal Exit...:)");
 }
+*/
 
 
 

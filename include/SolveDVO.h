@@ -68,17 +68,17 @@
 #define __REPROJECTION_LEVEL 0 //only useful with above defines
 
 
-//#define __ENABLE_DISPLAY__  1 //display in loop()
-#define __MINIMAL_DISPLAY 1
+#define __ENABLE_DISPLAY__  1 //display in loop()
+//#define __MINIMAL_DISPLAY
 
 
 
 
 //
 // Ground truth Plugs
-#define __TF_GT__ //Enable GT DISPLAY
-#define __WRITE_EST_POSE_TO_FILE "poses/estPoses.txt"
-#define __WRITE_GT__POSE_TO_FILE "poses/gtPoses.txt"
+//#define __TF_GT__ //Enable GT DISPLAY
+//#define __WRITE_EST_POSE_TO_FILE "poses/estPoses.txt"
+//#define __WRITE_GT__POSE_TO_FILE "poses/gtPoses.txt"
 
 
 //
@@ -89,7 +89,17 @@
 
 //
 // Interpolate distance transform plug
-#define __INTERPOLATE_DISTANCE_TRANSFORM
+//#define __INTERPOLATE_DISTANCE_TRANSFORM
+
+
+
+//
+// Read data from files plug.
+//      Note: This is not ensuring that dvo does not listen to streams (need to take care of this by yourself)
+//      Note: Cannot be used together with __TF_GT__ because the xml files do not contain GT data
+//#define __DATA_FROM_XML_FILES__ "TUM_RGBD/fr2_desk"
+//#define __DATA_FROM_XML_FILES__START 0 //compulsory
+//#define __DATA_FROM_XML_FILES__END 500 //compulsory
 
 #undef NDEBUG
 #include <assert.h>
@@ -168,7 +178,7 @@ private:
 
     //
     // Frame pose handling class
-    GOP<float> gop;
+    GOP<double> gop;
 
 
 
@@ -304,7 +314,7 @@ private:
     float psiNormTerminationThreshold; //terminate iteration if norm of psi falls below this value
     float trustRegionHyperSphereRadius; //trust region to scale the direction of descent
 
-
+    std::vector<int> iterationsConfig;
 
 };
 

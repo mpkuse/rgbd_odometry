@@ -389,7 +389,7 @@ void MentisVisualHandle::publishGOP(geometry_msgs::Pose& returnLatestPose )
 
 }
 
-
+/*
 /// Mapping of the environment
 /// Gets the global poses and 3d point cloud (wrt frame) of the frame. Converts each point cloud to single global frame-of-ref.
 /// Accumulates all the points and plots as a PointCloud.
@@ -473,7 +473,7 @@ void MentisVisualHandle::publishFullPointCloud()
 
 
 
-}
+}*/
 
 /// Publishes the given R,T. These R,T comes from TF data
 /// @param [in] rot : Rotation matrix retrived from TF

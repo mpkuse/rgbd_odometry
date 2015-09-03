@@ -1,0 +1,36 @@
+<launch>
+
+  <!-- Bag -->
+  <node name="rosbag" 
+        pkg="rosbag" 
+        type="play" 
+        respawn="false"
+  args="-s 3.3 -r 0.1 $(env BAG_PATH)rgbd_dataset_freiburg1_floor.bag"
+  
+  />                 
+
+<node pkg="rgbd_odometry" name="camTopic2PublisherPyD" type="camTopic2PublisherPyD" output="screen">
+  </node> 
+
+
+<node pkg="rgbd_odometry" name="dvo" type="dvo" output="screen">
+  </node> 
+
+<!--
+  <node name="rviz" 
+        pkg="rviz" 
+        type="rviz" 
+        respawn="false"
+        args="-d $(env PWD)/depth_cam_viz.rviz"
+        />
+        -->
+<!--
+  <node pkg="image_view"
+        name="image_view"
+        type="image_view"       
+        output="screen">
+    <remap from="image" to="/stereo_pose_estimator/image_vis"/>
+    <param name="autosize" type="bool" value="true" />
+  </node> 
+-->
+</launch>

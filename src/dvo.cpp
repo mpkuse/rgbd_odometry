@@ -15,6 +15,6 @@ int main( int argc, char ** argv )
     dvo.setCameraMatrix( "Freiburg_ROS_default_320x240.xml" );
     dvo.loop();
     //dvo.loopFromFile();
-    //dvo.loopDry();
+//    dvo.loopDry();
 
 }

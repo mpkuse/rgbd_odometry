@@ -62,21 +62,25 @@
 //#define GRAD_NORM( A, B ) fabs(A)
 
 //
-// Display Plugs
+// Display Plugs (Each Iteration wait plugs)
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__DISPLAY_ONLY
+//#define __PRINT_POSE_EACH_ITERATION 0 //display the data only for this level in runIterations
+
+
 #define __REPROJECTION_LEVEL 0 //only useful with above defines
 
 
-#define __ENABLE_DISPLAY__  1 //display in loop()
-//#define __MINIMAL_DISPLAY
+
+//#define __ENABLE_DISPLAY__  0 //display in loop()
+#define __MINIMAL_DISPLAY  1
 
 
 
 
 //
 // Ground truth Plugs
-//#define __TF_GT__ //Enable GT DISPLAY
+#define __TF_GT__ //Enable GT DISPLAY
 //#define __WRITE_EST_POSE_TO_FILE "poses/estPoses.txt"
 //#define __WRITE_GT__POSE_TO_FILE "poses/gtPoses.txt"
 
@@ -91,6 +95,9 @@
 // Interpolate distance transform plug
 //#define __INTERPOLATE_DISTANCE_TRANSFORM
 
+//
+// Attempt rotationization (with SVD) at each iteration
+#define __ENABLE_ROTATIONIZE__
 
 
 //
@@ -99,7 +106,7 @@
 //      Note: Cannot be used together with __TF_GT__ because the xml files do not contain GT data
 //#define __DATA_FROM_XML_FILES__ "TUM_RGBD/fr2_desk"
 //#define __DATA_FROM_XML_FILES__START 0 //compulsory
-//#define __DATA_FROM_XML_FILES__END 500 //compulsory
+//#define __DATA_FROM_XML_FILES__END 2500 //compulsory
 
 #undef NDEBUG
 #include <assert.h>
@@ -192,15 +199,16 @@ private:
     bool isJacobianComputed;
     //void computeJacobian();
     //void computeJacobian(int level, JacobianList &J, ImCordList &imC, SpaceCordList &spC, IntensityList &I, Eigen::MatrixXi &refROI );
-    void runIterations( int level, int maxIterations, Eigen::Matrix3f &cR, Eigen::Vector3f &cT,
+    void runIterations( int level, int maxIterations, Eigen::Matrix3d &cR, Eigen::Vector3d &cT,
                                 Eigen::VectorXf& energyAtEachIteration, Eigen::VectorXf& finalEpsilons,
                                 Eigen::MatrixXf& finalReprojections, int& bestEnergyIndex, float & finalVisibleRatio );
     void updateEstimates( Eigen::Matrix3f& cR, Eigen::Vector3f& cT, Eigen::Matrix3f& xRot, Eigen::Vector3f& xTrans );
 
     float getWeightOf( float r );
     int selectedPts(int level, Eigen::MatrixXi &roi);
-    void rotationize( Eigen::Matrix3f& R);
+    void rotationize( Eigen::Matrix3d &R);
     float interpolate( Eigen::MatrixXf &F, float ry, float rx );
+    float aggregateEpsilons( Eigen::VectorXf epsilon );
 
 
     bool signalGetNewRefImage;
@@ -214,6 +222,7 @@ private:
     void exponentialMap(Eigen::VectorXf &psi, Eigen::Matrix3f &outR, Eigen::Vector3f &outT); //this is not in use. It is done with Sophus
     void sOverlay( Eigen::MatrixXf eim, Eigen::MatrixXi mask, cv::Mat &outIm, cv::Vec3b color);
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
+    void printRT( Eigen::Matrix3d &fR, Eigen::Vector3d &fT, const char *msg );
     void printPose( geometry_msgs::Pose& rospose, const char * msg, std::ostream &stream );
     float getDriftFromPose( geometry_msgs::Pose& p1, geometry_msgs::Pose& p2 );
     void  analyzeDriftVector( std::vector<float>& v );

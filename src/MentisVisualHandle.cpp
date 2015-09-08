@@ -319,9 +319,9 @@ void MentisVisualHandle::publishGOP(geometry_msgs::Pose& returnLatestPose )
         if( dvoHandle->gop.isKeyFrameAt(i) )
         {
             marker.id = i;
-            marker.scale.x = .02;
-            marker.scale.y = .02;
-            marker.scale.z = .02;
+            marker.scale.x = .005;
+            marker.scale.y = .005;
+            marker.scale.z = .005;
 
             int reason = dvoHandle->gop.getReasonAt(i);
             switch(reason)
@@ -369,9 +369,9 @@ void MentisVisualHandle::publishGOP(geometry_msgs::Pose& returnLatestPose )
         else //non-key frames
         {
             marker.id = i;
-            marker.scale.x = .01;
-            marker.scale.y = .01;
-            marker.scale.z = .01;
+            marker.scale.x = .005;
+            marker.scale.y = .005;
+            marker.scale.z = .005;
             marker.color.r = 0.0f;
             marker.color.g = 0.0f;
             marker.color.b = 0.0f;

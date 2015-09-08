@@ -34,7 +34,7 @@
 class SolveDVO; //forward declaration of a friend class
 
 #define __DEBUG_FRAME_MARKER__ //visualize sphere at poses which were keyframes
-//#define __DEBUG_FRAME_MARKER_ALL_FRAMES
+#define __DEBUG_FRAME_MARKER_ALL_FRAMES
 
 
 /// @class Defines a class for visualization to RViz.

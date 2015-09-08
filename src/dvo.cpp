@@ -8,7 +8,7 @@
 int main( int argc, char ** argv )
 {
     Eigen::initParallel();
-    ros::init(argc, argv, "dvo_node");
+    ros::init(argc, argv, "gdvo_node");
     SolveDVO dvo;
     //dvo.setCameraMatrix( "params_mm_scale_half.xml" ); //w/o distortion coifs
     //dvo.setCameraMatrix( "Xtion_320x240.xml" );

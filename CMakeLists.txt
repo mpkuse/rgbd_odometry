@@ -215,6 +215,11 @@ add_executable( tfPlay
 )
 
 
+add_executable( bagManip
+    src/bagManip.cpp
+)
+
+
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
 # add_dependencies(rgbd_odometry_node rgbd_odometry_generate_messages_cpp)
@@ -279,6 +284,10 @@ add_dependencies(opencvpnp rgbd_odometry_generate_messages_cpp)
  )
 
  target_link_libraries( tfPlay
+    ${catkin_LIBRARIES}
+ )
+
+ target_link_libraries( bagManip
     ${catkin_LIBRARIES}
  )
 

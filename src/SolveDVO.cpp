@@ -27,10 +27,10 @@ SolveDVO::SolveDVO()
 
 
     // Iterations Config
-    iterationsConfig.push_back(71); //level 0
-//    iterationsConfig.push_back(50); //level 1
-//    iterationsConfig.push_back(50); //level 2
-//    iterationsConfig.push_back(50); //level 3
+    iterationsConfig.push_back(50); //level 0
+    iterationsConfig.push_back(50); //level 1
+    iterationsConfig.push_back(50); //level 2
+    iterationsConfig.push_back(50); //level 3
 
 
 
@@ -649,7 +649,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3d& cR, 
     Eigen::VectorXf bestEpsilon;
     Eigen::MatrixXf bestReprojections;
 
-    double stepLength=3E-8;
+    double stepLength=1E-1;
     double BETA = 0.5;
     Eigen::VectorXd descentDirection = Eigen::VectorXd::Zero(6);
 //    Eigen::VectorXd descentDirection = Eigen::VectorXd::Constant(6,1,1.0);
@@ -722,7 +722,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3d& cR, 
 
         // Custom Pre-conditioner
         Eigen::Matrix<double,6,1> PVec;
-        double PFactor = 0.5;
+        double PFactor = .5;
         double factorBig = 1.0 / ( 3*(1+PFactor) );
         double factorSmall = PFactor / ( 3*(1+PFactor) );
         //PVec<<factorBig, factorBig, factorBig   , factorSmall, factorSmall, factorSmall;
@@ -731,6 +731,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3d& cR, 
 
 
 
+#ifdef __ENABLE_L2_REGULARIZATION
         // L2 Regularization
         Sophus::SE3d cGrp;
         cGrp.setRotationMatrix( cR );
@@ -739,6 +740,7 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3d& cR, 
         if( cPsi.norm() > 0 )
             cPsi = cPsi / cPsi.norm();
         double regularizationLambda = 0.05;
+#endif //__ENABLE_L2_REGULARIZATION
 
 
 
@@ -747,7 +749,8 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3d& cR, 
         //      Input  : Jcbian & JTW, epsilon          //
         //      Output : psi                            //
         //////////////////////////////////////////////////
-        /* // LM heuristic
+        /*
+         // LM heuristic
         if( prevTotalEpsilon < currentTotalEpsilon ){
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
             ROS_INFO( "Registed INCREASE of energy at this iteration"); // divergence ... bad (so reduce step length )
@@ -761,23 +764,62 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3d& cR, 
 #endif
             stepLength =(stepLength>1E9)?stepLength: stepLength * 2.0f; //done to avoid floating point problems
             //BETA = 0.75;
-        }*/
+        }
+        */
+
+
 
         // Square summable but not summable seq of step-length (as recommended in Boyd's documents)
-        stepLength = 6.0 * 1.0E-2 / (double)(itr+1);
+        stepLength = 9.0 * 1.0E-2 / (  (itr>5)?(double)(itr-4):1.0  );  //dont turn down the rate too soon
+//        BETA = 0.99 * (double)itr/(double)maxIterations;
 
 
         Eigen::VectorXd g = JTW_64 * epsilon_64; // subgradient of \Sum{ V^2(.) }
-        g = g/g.norm();
+        double g_norm = g.norm();
+//        g = g/g_norm;
+
+
+        //Mike Shuster's Advice. Increase stepLen when grads point in same direction
+        bool gradPointsInSameDirection=true;
+        if( ((g.transpose() * g_prev) > 0)   ) { //same direction
+//            stepLength =(stepLength>1000)?stepLength: stepLength * 1.2f; //done to avoid floating point problems
+            gradPointsInSameDirection=true;
+        }
+        else {
+//            stepLength =(stepLength<1E-9)?stepLength: stepLength / 2.0f; //done to avoid floating point problems
+            gradPointsInSameDirection=false;
+        }
+
+
+
+#ifdef __ENABLE_L2_REGULARIZATION
         g += regularizationLambda * cPsi; //adding regularization term
+#endif //__ENABLE_L2_REGULARIZATION
+
         descentDirection = (1.0f-BETA)*g + BETA*descentDirection;
 //        descentDirection = (1.0f-BETA)*g + BETA*g_prev;
 //        descentDirection = g;
-        descentDirection = descentDirection / descentDirection.norm();
+
+        double s_norm = descentDirection.norm();
+//        descentDirection = descentDirection / s_norm;
         g_prev = g;
 
 
+
+
+
+        // Printing about gradients
+#ifdef __PRINT_GRAD_DIRECTION_EACH_ITERATION
+        char xcttt[500];
+        sprintf( xcttt, "raw grad (%.4lf, %.4lf %.4lf %s dirn)", g_norm, s_norm, s_norm/g_norm, gradPointsInSameDirection?"same":"opposite" );
+        printDescentDirection( g, xcttt );
+#endif
+
+
+
+
         Eigen::VectorXd psi = - stepLength* P * descentDirection;
+
 
 
 #ifdef __SHOW_REPROJECTIONS_EACH_ITERATION__
@@ -908,12 +950,26 @@ void SolveDVO::runIterations(int level, int maxIterations, Eigen::Matrix3d& cR, 
 
 #endif
 
+#ifdef __WRITE_EACH_ITERATION_IMAGE_TO_FILE
+        char ffffName[500], fffNameDT[500];
+        FRG34h_casualIterationCount = itr;
+        sprintf( ffffName, "%d.png", FRG34h_casualIterationCount );
+        sprintf( fffNameDT, "DT_%d.png", FRG34h_casualIterationCount );
+        if( FRG34h_casualIterationCount%5 == 0 ) {
+        cv::imwrite( ffffName, outImGray );
+        cv::imwrite( fffNameDT, outIm );
+        }
+
+        ROS_INFO( "iteration image to file written");
+
+#endif
+
         visualizeDistanceResidueHeatMap(im_n[level], reprojectedMask, now_distance_transform[level] );
         visualizeEnergyProgress( energyAtEachIteration, bestItrNumber, (energyAtEachIteration.rows() < 300)?4:1 );
 
 
 
-#ifndef __PRINT_POSE_EACH_ITERATION
+#if  !defined(__PRINT_POSE_EACH_ITERATION)  &&  !defined(__PRINT_GRAD_DIRECTION_EACH_ITERATION)
         ROS_ERROR( "Waiting in runIterations (#%d)... ", itr );
 #endif
         char ch = cv::waitKey(0);
@@ -1253,7 +1309,7 @@ float SolveDVO::interpolate(Eigen::MatrixXf& F, float ry, float rx)
 
 float SolveDVO::aggregateEpsilons(Eigen::VectorXf epsilon)
 {
-//    return epsilon.norm();
+    return epsilon.norm();
     float sum=0;
     for( int p=0 ; p<epsilon.rows() ; p++ )
     {
@@ -1295,6 +1351,21 @@ void SolveDVO::printPose(geometry_msgs::Pose &rospose, const char *msg, std::ost
         stream.flush();
     }
 
+}
+
+/// Prints the 6-vector representing direction of descent
+void SolveDVO::printDescentDirection(Eigen::VectorXd d, const char *msg)
+{
+    assert( d.rows() == 6 );
+
+    ROS_INFO( "Direction (%s) : %-4.4lf %-4.4lf %-4.4lf ::: %-4.4lf %-4.4lf %-4.4lf", msg, d(0), d(1), d(2),    d(3), d(4), d(5) );
+}
+
+void SolveDVO::printDescentDirection(Eigen::VectorXf d, const char *msg)
+{
+    assert( d.rows() == 6 );
+
+    ROS_INFO( "Direction (%s) : %-4.4f %-4.4f %-4.4f ::: %-4.4f %-4.4f %-4.4f", msg, d(0), d(1), d(2),    d(3), d(4), d(5) );
 }
 
 float SolveDVO::getDriftFromPose(geometry_msgs::Pose &p1, geometry_msgs::Pose &p2)
@@ -1501,12 +1572,20 @@ void SolveDVO::visualizeDistanceResidueHeatMap(Eigen::MatrixXf &eim, Eigen::Matr
 
     cv::imshow( "residues heatmap", xim );
 
+#ifdef __WRITE_EACH_ITERATION_IMAGE_TO_FILE
+        char ffffName[500];
+        sprintf( ffffName, "%d_heatmap.png", FRG34h_casualIterationCount );
+        if( FRG34h_casualIterationCount%5 == 0 )
+        cv::imwrite( ffffName, xim );
+        ROS_INFO( "iteration image to file written");
+#endif
+
 }
 
 void SolveDVO::visualizeEnergyProgress(Eigen::VectorXf energyAtEachIteration, int bestEnergyIndex, int XSPACING )
 {
     assert( energyAtEachIteration.rows() > 0 );
-    energyAtEachIteration *= 100.0;
+    energyAtEachIteration *= 10.0;
 
     int len = energyAtEachIteration.rows();
     float min = energyAtEachIteration.minCoeff();
@@ -1526,7 +1605,7 @@ void SolveDVO::visualizeEnergyProgress(Eigen::VectorXf energyAtEachIteration, in
     }
     for( float p=0.0 ; p<100000.0 ; p+=5000.0 ) { //plot y-axis labels
         char str[40];
-        sprintf( str, "%2.0fX", (int) p/1000.0 );
+        sprintf( str, "%2.0f00", (int) p/1000.0 );
         cv::circle( energyPlot, cv::Point(20,energyPlot.rows - 20 - p/200.0),2, cv::Scalar(0,0,255), -1);
         cv::putText( energyPlot, str, cv::Point(3, energyPlot.rows - 25 - p/200.0), cv::FONT_HERSHEY_COMPLEX_SMALL, .5, cv::Scalar(0,0,0) );
     }
@@ -1628,7 +1707,10 @@ void SolveDVO::computeDistTransfrmOfRef()
 
 //        cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L2, 5 );
         cv::distanceTransform( refEdge, refDistTransCvMat, CV_DIST_L2, CV_DIST_MASK_PRECISE );
+
+#ifdef __SCALE_NORMALIZE_DISTANCE_TRANFROM
         cv::normalize(refDistTransCvMat, refDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
+#endif
 
 //        double min, max;
 //        cv::minMaxLoc(refDistTransCvMat, &min, &max);
@@ -1687,7 +1769,10 @@ void SolveDVO::computeDistTransfrmOfNow()
 
 //        cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L2, 5 );
         cv::distanceTransform( nowEdge, nowDistTransCvMat, CV_DIST_L2, CV_DIST_MASK_PRECISE );
+
+#ifdef __SCALE_NORMALIZE_DISTANCE_TRANFROM
         cv::normalize(nowDistTransCvMat, nowDistTransCvMat, 0.0, 255.0, cv::NORM_MINMAX);
+#endif
 
 //        double min, max;
 //        cv::minMaxLoc(nowDistTransCvMat, &min, &max);
@@ -1948,7 +2033,7 @@ void SolveDVO::loop()
     {
         ros::spinOnce();
 #ifdef __DATA_FROM_XML_FILES__
-        int iDataFrameNum = __DATA_FROM_XML_FILES__START + nFrame;
+        int iDataFrameNum = __DATA_FROM_XML_FILES__START + __DATA_SKIP_FACTOR*nFrame;
         if( iDataFrameNum > __DATA_FROM_XML_FILES__END )
         {
             ROS_ERROR( "Done with all files...Quitting..." );
@@ -2285,6 +2370,75 @@ void SolveDVO::loop()
 
     }
 
+}
+
+
+/// Tmperory function to study effect of heavy ball
+void SolveDVO::casualTestFunction()
+{
+    char frameFileName[500];
+    bool flag;
+
+
+    Eigen::Matrix3d cR_64 = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d cT_64 = Eigen::Vector3d::Zero();
+
+
+    // Additional data returned by Gauss-Newton iterations
+    Eigen::VectorXf epsilonVec;
+    Eigen::MatrixXf reprojections;
+    Eigen::VectorXf energyAtEachIteration;
+    int bestEnergyIndex = -1;
+    float visibleRatio = 0.0;
+
+
+    // Set a ref frame
+    sprintf( frameFileName, "%s/framemono_%04d.xml", "TUM_RGBD/fr1_rpy", 80 );
+    flag = loadFromFile(frameFileName );
+    if( flag == false ) {
+        ROS_ERROR( "Cannot open file1");
+    }
+    else
+        ROS_INFO( "=== Loaded file ``%s'' ===", frameFileName );
+
+    setRcvdFrameAsRefFrame();
+    preProcessRefFrame();
+
+
+
+
+
+    // Set a now frame
+    sprintf( frameFileName, "%s/framemono_%04d.xml", "TUM_RGBD/fr1_rpy", 85 );
+    flag = loadFromFile(frameFileName );
+    if( flag == false ) {
+        ROS_ERROR( "Cannot open file1");
+    }
+    else
+        ROS_INFO( "=== Loaded file ``%s'' ===", frameFileName );
+
+    setRcvdFrameAsNowFrame();
+
+
+
+
+    // Run iterations
+    runIterations(0, 100, cR_64, cT_64, energyAtEachIteration, epsilonVec, reprojections, bestEnergyIndex, visibleRatio );
+
+
+
+
+    imshowEigenImage( "current Frame", im_n[0] );
+    char ch = cv::waitKey(0);
+    if( ch == 27 ){ // ESC
+        ROS_ERROR( "ESC pressed quitting...");
+        exit(1);
+    }
+
+    for( int i=0 ; i<energyAtEachIteration.rows() ; i++ )
+    {
+        std::cout<< energyAtEachIteration[i] << std::endl;
+    }
 }
 
 /*

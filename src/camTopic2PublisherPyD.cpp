@@ -230,8 +230,10 @@ int main( int argc, char ** argv )
     ros::Subscriber sub_depth_cam_info = nh.subscribe( "/camera/depth/camera_info", 2, depthCamInfoRcvd );
     ros::Subscriber sub_rgb_cam_info = nh.subscribe( "/camera/rgb/camera_info", 2, rgbCamInfoRcvd );
 
-    ros::Subscriber sub_rgb_im = nh.subscribe( "/camera/rgb/image_color", 2, rgbRcvd );
-    ros::Subscriber sub_depth_im = nh.subscribe( "/camera/depth/image", 2, depthRcvd );
+//    ros::Subscriber sub_rgb_im = nh.subscribe( "/camera/rgb/image_color", 2, rgbRcvd );
+//    ros::Subscriber sub_depth_im = nh.subscribe( "/camera/depth/image", 2, depthRcvd );
+    ros::Subscriber sub_rgb_im = nh.subscribe( "/modStream/rgb/image_color", 2, rgbRcvd );
+    ros::Subscriber sub_depth_im = nh.subscribe( "/modStream/depth/image", 2, depthRcvd );
 
     ros::Publisher pub = nh.advertise<rgbd_odometry::RGBDFramePyd>("Xtion/rgbdPyramid", 1 );
 

@@ -16,5 +16,6 @@ int main( int argc, char ** argv )
     dvo.loop();
     //dvo.loopFromFile();
 //    dvo.loopDry();
+//    dvo.casualTestFunction();
 
 }

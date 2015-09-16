@@ -66,14 +66,15 @@
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__
 //#define __SHOW_REPROJECTIONS_EACH_ITERATION__DISPLAY_ONLY
 //#define __PRINT_POSE_EACH_ITERATION 0 //display the data only for this level in runIterations
+//#define __PRINT_GRAD_DIRECTION_EACH_ITERATION
 
 
 #define __REPROJECTION_LEVEL 0 //only useful with above defines
 
 
 
-//#define __ENABLE_DISPLAY__  0 //display in loop()
-#define __MINIMAL_DISPLAY  1
+//#define __ENABLE_DISPLAY__  1  //display in loop()
+#define __MINIMAL_DISPLAY 1
 
 
 
@@ -81,8 +82,8 @@
 //
 // Ground truth Plugs
 #define __TF_GT__ //Enable GT DISPLAY
-//#define __WRITE_EST_POSE_TO_FILE "poses/estPoses.txt"
-//#define __WRITE_GT__POSE_TO_FILE "poses/gtPoses.txt"
+#define __WRITE_EST_POSE_TO_FILE "poses/estPoses.txt"
+#define __WRITE_GT__POSE_TO_FILE "poses/gtPoses.txt"
 
 
 //
@@ -95,9 +96,20 @@
 // Interpolate distance transform plug
 //#define __INTERPOLATE_DISTANCE_TRANSFORM
 
+
+//
+// Scale Distance transform plug. ie. scale distance transfrom to 0-255.
+// note: If you do not scale you cannot really view the overlay on the DT. Not scaling gives better pose estimates
+#define __SCALE_NORMALIZE_DISTANCE_TRANFROM
+
 //
 // Attempt rotationization (with SVD) at each iteration
 #define __ENABLE_ROTATIONIZE__
+
+
+//
+// Enable regularization term
+#define __ENABLE_L2_REGULARIZATION
 
 
 //
@@ -107,9 +119,16 @@
 //#define __DATA_FROM_XML_FILES__ "TUM_RGBD/fr2_desk"
 //#define __DATA_FROM_XML_FILES__START 0 //compulsory
 //#define __DATA_FROM_XML_FILES__END 2500 //compulsory
+//#define __DATA_SKIP_FACTOR 4 //use 1 for processing every frame. 2 will give every alternate frame, 3 will gv every 3rd frame and so on
 
 #undef NDEBUG
 #include <assert.h>
+
+
+
+//
+// Writing iteration image reprojection files
+//#define __WRITE_EACH_ITERATION_IMAGE_TO_FILE
 
 
 
@@ -138,6 +157,13 @@ public:
     void loopDry();
     void loop();
     void loopFromFile();
+
+
+    // Causal Testing for the icra-2016 paper
+    void casualTestFunction();
+#ifdef __WRITE_EACH_ITERATION_IMAGE_TO_FILE
+    int FRG34h_casualIterationCount;
+#endif
 
     void setCameraMatrix(const char* calibFile);
 
@@ -224,6 +250,8 @@ private:
     void printRT( Eigen::Matrix3f &fR, Eigen::Vector3f &fT, const char *msg );
     void printRT( Eigen::Matrix3d &fR, Eigen::Vector3d &fT, const char *msg );
     void printPose( geometry_msgs::Pose& rospose, const char * msg, std::ostream &stream );
+    void printDescentDirection( Eigen::VectorXd direction, const char * msg );
+    void printDescentDirection( Eigen::VectorXf direction, const char * msg );
     float getDriftFromPose( geometry_msgs::Pose& p1, geometry_msgs::Pose& p2 );
     void  analyzeDriftVector( std::vector<float>& v );
     float processResidueHistogram( Eigen::VectorXf &residi, bool quite );
@@ -324,6 +352,10 @@ private:
     float trustRegionHyperSphereRadius; //trust region to scale the direction of descent
 
     std::vector<int> iterationsConfig;
+
+
+
+
 
 };
 
